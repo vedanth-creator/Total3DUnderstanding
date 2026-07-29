@@ -9,6 +9,7 @@ struct FurniturePropertiesPanel: View {
                 VStack(alignment: .leading, spacing: 26) {
                     header(furniture)
                     dimensions(furniture)
+                    position(furniture)
                     rotation(furniture)
                     metadata(furniture)
                 }
@@ -72,6 +73,25 @@ struct FurniturePropertiesPanel: View {
         }
     }
 
+    private func position(_ furniture: FurnitureItem) -> some View {
+        let position = viewModel.positionMeters(for: furniture)
+        return VStack(alignment: .leading, spacing: 18) {
+            sectionTitle("Floor position")
+            propertySlider(
+                title: "Left / right",
+                value: position.x,
+                range: (-viewModel.scene.roomWidth / 2)...(viewModel.scene.roomWidth / 2),
+                onChange: { viewModel.updateSelected(positionX: $0) }
+            )
+            propertySlider(
+                title: "Front / back",
+                value: position.z,
+                range: (-viewModel.scene.roomDepth / 2)...(viewModel.scene.roomDepth / 2),
+                onChange: { viewModel.updateSelected(positionZ: $0) }
+            )
+        }
+    }
+
     private func rotation(_ furniture: FurnitureItem) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             sectionTitle("Orientation")
@@ -100,7 +120,7 @@ struct FurniturePropertiesPanel: View {
             if let confidence = furniture.detectorConfidence {
                 infoRow("Detection", value: "\(Int(confidence * 100))%")
             }
-            infoRow("Geometry", value: "Placeholder box")
+            infoRow("Geometry", value: "RealityKit box")
             infoRow("Mesh", value: furniture.meshReference ?? "Not connected")
         }
     }
@@ -147,4 +167,3 @@ struct FurniturePropertiesPanel: View {
         }
     }
 }
-

@@ -34,14 +34,15 @@ enum SampleData {
     }
 
     static let livingRoomScene = RoomScene(
-        id: UUID(uuidString: "CF22EBF4-A00D-4AC5-B215-04B2335F7951")!,
+        id: UUID(uuidString: "CF22EBF4-A00D-4AC5-B215-04B2335F7951") ?? UUID(),
         name: "Sunlit Living Room",
         imageIdentifier: "sample://sunlit-living-room",
         roomWidth: 5.8,
         roomDepth: 4.2,
+        roomHeight: 2.7,
         furniture: [
             FurnitureItem(
-                id: UUID(uuidString: "74AFE875-861C-4CB5-8427-A34ED03E0C74")!,
+                id: UUID(uuidString: "74AFE875-861C-4CB5-8427-A34ED03E0C74") ?? UUID(),
                 name: "Cloud Sofa",
                 category: .sofa,
                 normalizedX: 0.50,
@@ -55,7 +56,7 @@ enum SampleData {
                 meshReference: nil
             ),
             FurnitureItem(
-                id: UUID(uuidString: "A1891890-3A4C-485B-8E0B-F4D2EC868126")!,
+                id: UUID(uuidString: "A1891890-3A4C-485B-8E0B-F4D2EC868126") ?? UUID(),
                 name: "Oak Coffee Table",
                 category: .table,
                 normalizedX: 0.50,
@@ -69,7 +70,7 @@ enum SampleData {
                 meshReference: nil
             ),
             FurnitureItem(
-                id: UUID(uuidString: "D9D2F5F3-2444-4BA2-8D79-2CA863C3EA10")!,
+                id: UUID(uuidString: "D9D2F5F3-2444-4BA2-8D79-2CA863C3EA10") ?? UUID(),
                 name: "Reading Chair",
                 category: .chair,
                 normalizedX: 0.20,
@@ -83,7 +84,7 @@ enum SampleData {
                 meshReference: nil
             ),
             FurnitureItem(
-                id: UUID(uuidString: "8464300D-C270-429F-B861-1A95349DA5C3")!,
+                id: UUID(uuidString: "8464300D-C270-429F-B861-1A95349DA5C3") ?? UUID(),
                 name: "Fiddle Leaf Fig",
                 category: .plant,
                 normalizedX: 0.84,
@@ -106,6 +107,7 @@ enum SampleData {
         imageIdentifier: "sample://calm-bedroom",
         roomWidth: 4.6,
         roomDepth: 3.8,
+        roomHeight: 2.65,
         furniture: [
             FurnitureItem(id: UUID(), name: "Platform Bed", category: .bed, normalizedX: 0.5, normalizedY: 0.62, width: 2.1, depth: 2.2, height: 0.6, rotationDegrees: 0, colorHex: "C8BEB4", detectorConfidence: 0.96, meshReference: nil),
             FurnitureItem(id: UUID(), name: "Bedside Cabinet", category: .cabinet, normalizedX: 0.82, normalizedY: 0.62, width: 0.55, depth: 0.48, height: 0.55, rotationDegrees: 0, colorHex: "9B8067", detectorConfidence: 0.87, meshReference: nil)
@@ -119,6 +121,7 @@ enum SampleData {
         imageIdentifier: "sample://studio-workspace",
         roomWidth: 4.2,
         roomDepth: 3.1,
+        roomHeight: 2.7,
         furniture: [
             FurnitureItem(id: UUID(), name: "Work Table", category: .table, normalizedX: 0.52, normalizedY: 0.3, width: 1.8, depth: 0.75, height: 0.74, rotationDegrees: 0, colorHex: "AA8A68", detectorConfidence: 0.92, meshReference: nil),
             FurnitureItem(id: UUID(), name: "Task Chair", category: .chair, normalizedX: 0.52, normalizedY: 0.58, width: 0.65, depth: 0.65, height: 0.95, rotationDegrees: 0, colorHex: "66717E", detectorConfidence: 0.90, meshReference: nil),
@@ -127,4 +130,3 @@ enum SampleData {
         warnings: ["Preview geometry uses placeholder furniture boxes."]
     )
 }
-

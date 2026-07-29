@@ -51,7 +51,7 @@ struct RoomScene: Identifiable, Hashable {
     var imageIdentifier: String
     var roomWidth: Double
     var roomDepth: Double
+    var roomHeight: Double
     var furniture: [FurnitureItem]
     var warnings: [String]
 }
-

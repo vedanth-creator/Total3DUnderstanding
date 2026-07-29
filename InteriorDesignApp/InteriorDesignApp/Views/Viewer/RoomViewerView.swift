@@ -5,6 +5,7 @@ struct RoomViewerView: View {
     let onClose: () -> Void
 
     @State private var showCompactProperties = false
+    @State private var resetViewToken = 0
 
     var body: some View {
         GeometryReader { proxy in
@@ -58,21 +59,27 @@ struct RoomViewerView: View {
     private var viewerCanvas: some View {
         VStack(spacing: 0) {
             HStack {
-                Label("Top view", systemImage: "square.3.layers.3d.top.filled")
+                Label("3D room", systemImage: "cube.transparent")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(AppTheme.secondaryInk)
                 Spacer()
-                Text("Tap an object to edit")
-                    .font(.caption)
-                    .foregroundStyle(AppTheme.secondaryInk)
+                Button {
+                    resetViewToken += 1
+                } label: {
+                    Label("Reset View", systemImage: "viewfinder")
+                        .font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.bordered)
             }
             .padding(16)
 
-            RoomCanvasView(viewModel: viewModel) {
+            RealityRoomView(
+                viewModel: viewModel,
+                resetViewToken: resetViewToken
+            ) {
                 showCompactProperties = true
             }
         }
         .premiumCard(cornerRadius: 26)
     }
 }
-
