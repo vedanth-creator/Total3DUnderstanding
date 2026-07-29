@@ -20,6 +20,7 @@ final class AppViewModel: ObservableObject {
 
     init(designService: RoomDesignProviding) {
         self.designService = designService
+        AppDebugLog.write("AppViewModel initialized")
     }
 
     func showHome() {
@@ -43,13 +44,19 @@ final class AppViewModel: ObservableObject {
 
     func openSampleScene(_ room: SampleRoom) {
         uploadViewModel.select(room)
-        viewerViewModel = RoomViewerViewModel(scene: SampleData.scene(for: room))
+        let scene = SampleData.scene(for: room)
+        AppDebugLog.write(
+            "Created sample scene id=\(scene.id) furniture=\(scene.furniture.count)"
+        )
+        viewerViewModel = RoomViewerViewModel(scene: scene)
         route = .viewer
     }
 
     func showViewer(_ scene: RoomScene) {
+        AppDebugLog.write(
+            "Opening generated scene id=\(scene.id) furniture=\(scene.furniture.count)"
+        )
         viewerViewModel = RoomViewerViewModel(scene: scene)
         route = .viewer
     }
 }
-

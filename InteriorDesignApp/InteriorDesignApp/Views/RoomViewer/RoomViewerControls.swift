@@ -37,6 +37,7 @@ final class RoomViewerControls: NSObject, UIGestureRecognizerDelegate {
 
         recognizers = [orbit, pan, pinch]
         recognizers.forEach(hostView.addGestureRecognizer)
+        AppDebugLog.write("Installed \(recognizers.count) camera gesture recognizers")
     }
 
     func uninstall() {
@@ -45,6 +46,7 @@ final class RoomViewerControls: NSObject, UIGestureRecognizerDelegate {
         }
         recognizers.removeAll()
         hostView = nil
+        AppDebugLog.write("Removed camera gesture recognizers")
     }
 
     func gestureRecognizer(

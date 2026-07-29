@@ -4,8 +4,15 @@ import UIKit
 struct FurnitureEntityRecord {
     let root: Entity
     let box: ModelEntity
-    let selectionHalo: ModelEntity
+    let selectionOutline: SelectionOutline
     let label: ModelEntity?
+}
+
+struct SelectionOutline {
+    let root: Entity
+    let xEdges: [ModelEntity]
+    let yEdges: [ModelEntity]
+    let zEdges: [ModelEntity]
 }
 
 @MainActor
@@ -34,13 +41,9 @@ enum EntityFactory {
         }
         root.addChild(box)
 
-        let halo = ModelEntity(
-            mesh: unitBox,
-            materials: [selectionMaterial()]
-        )
-        halo.name = "selection-halo"
-        halo.isEnabled = false
-        root.addChild(halo)
+        let selectionOutline = makeSelectionOutline()
+        selectionOutline.root.isEnabled = false
+        root.addChild(selectionOutline.root)
 
         let label = makeLabel(furniture.name)
         if let label {
@@ -50,7 +53,7 @@ enum EntityFactory {
         return FurnitureEntityRecord(
             root: root,
             box: box,
-            selectionHalo: halo,
+            selectionOutline: selectionOutline,
             label: label
         )
     }
@@ -81,8 +84,7 @@ enum EntityFactory {
         record.box.position = SIMD3<Float>(0, dimensions.y / 2, 0)
         record.box.model?.materials = [furnitureMaterial(hex: furniture.colorHex)]
 
-        record.selectionHalo.scale = dimensions * 1.035
-        record.selectionHalo.position = SIMD3<Float>(0, dimensions.y / 2, 0)
+        updateSelectionOutline(record.selectionOutline, dimensions: dimensions)
         record.label?.position = SIMD3<Float>(0, dimensions.y + 0.16, 0)
     }
 
@@ -133,8 +135,72 @@ enum EntityFactory {
 
     private static func selectionMaterial() -> UnlitMaterial {
         var material = UnlitMaterial()
-        material.color = .init(tint: UIColor(red: 0.96, green: 0.82, blue: 0.48, alpha: 0.24))
+        material.color = .init(tint: UIColor(red: 1.0, green: 0.78, blue: 0.16, alpha: 1.0))
         return material
+    }
+
+    private static func makeSelectionOutline() -> SelectionOutline {
+        let root = Entity()
+        root.name = "selection-outline"
+
+        func makeEdges(count: Int, axis: String) -> [ModelEntity] {
+            (0..<count).map { index in
+                let edge = ModelEntity(mesh: unitBox, materials: [selectionMaterial()])
+                edge.name = "selection-outline:\(axis):\(index)"
+                root.addChild(edge)
+                return edge
+            }
+        }
+
+        return SelectionOutline(
+            root: root,
+            xEdges: makeEdges(count: 4, axis: "x"),
+            yEdges: makeEdges(count: 4, axis: "y"),
+            zEdges: makeEdges(count: 4, axis: "z")
+        )
+    }
+
+    private static func updateSelectionOutline(
+        _ outline: SelectionOutline,
+        dimensions: SIMD3<Float>
+    ) {
+        // The wireframe sits outside the mesh rather than using a nearly
+        // coplanar shell, so depth testing cannot hide the selection state.
+        let padding: Float = 0.055
+        let thickness: Float = 0.025
+        let half = dimensions / 2 + SIMD3<Float>(repeating: padding)
+        outline.root.position = SIMD3<Float>(0, dimensions.y / 2, 0)
+
+        let signs: [Float] = [-1, 1]
+        var index = 0
+        for ySign in signs {
+            for zSign in signs {
+                let edge = outline.xEdges[index]
+                edge.scale = SIMD3<Float>(dimensions.x + padding * 2, thickness, thickness)
+                edge.position = SIMD3<Float>(0, ySign * half.y, zSign * half.z)
+                index += 1
+            }
+        }
+
+        index = 0
+        for xSign in signs {
+            for zSign in signs {
+                let edge = outline.yEdges[index]
+                edge.scale = SIMD3<Float>(thickness, dimensions.y + padding * 2, thickness)
+                edge.position = SIMD3<Float>(xSign * half.x, 0, zSign * half.z)
+                index += 1
+            }
+        }
+
+        index = 0
+        for xSign in signs {
+            for ySign in signs {
+                let edge = outline.zEdges[index]
+                edge.scale = SIMD3<Float>(thickness, thickness, dimensions.z + padding * 2)
+                edge.position = SIMD3<Float>(xSign * half.x, ySign * half.y, 0)
+                index += 1
+            }
+        }
     }
 
     private static func makeLabel(_ text: String) -> ModelEntity? {

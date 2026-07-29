@@ -21,16 +21,38 @@ struct RoomViewerView: View {
                     .padding(.horizontal, 20)
                     .padding(.bottom, 20)
                 } else {
-                    viewerCanvas
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 12)
+                    ZStack(alignment: .bottom) {
+                        viewerCanvas
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 12)
+
+                        if showCompactProperties {
+                            FurniturePropertiesPanel(
+                                viewModel: viewModel,
+                                onClose: { showCompactProperties = false }
+                            )
+                            .frame(maxHeight: min(proxy.size.height * 0.36, 290))
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 18)
+                            .shadow(color: .black.opacity(0.16), radius: 24, y: 10)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                            .zIndex(2)
+                        }
+                    }
                 }
             }
         }
-        .sheet(isPresented: $showCompactProperties) {
-            FurniturePropertiesPanel(viewModel: viewModel)
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
+        .animation(.spring(response: 0.34, dampingFraction: 0.86), value: showCompactProperties)
+        .onChange(of: viewModel.selectedFurnitureID) { _, selectedID in
+            if selectedID == nil {
+                showCompactProperties = false
+            }
+        }
+        .onAppear {
+            AppDebugLog.write("Room viewer appeared; scene=\(viewModel.scene.id)")
+        }
+        .onDisappear {
+            AppDebugLog.write("Room viewer disappeared; scene=\(viewModel.scene.id)")
         }
     }
 

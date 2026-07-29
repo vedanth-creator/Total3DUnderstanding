@@ -57,22 +57,40 @@ private struct ModernRealityRoomView: View {
 
     var body: some View {
         RealityView { content in
-            sceneCoordinator.synchronize(
-                scene: viewModel.scene,
-                selectedFurnitureID: viewModel.selectedFurnitureID
-            )
-            content.add(sceneCoordinator.rootEntity)
-            content.add(sceneCoordinator.cameraController.cameraEntity)
-            content.add(sceneCoordinator.cameraController.orbitTargetEntity)
+            // Add the virtual camera first, then apply its room-aware default
+            // transform while it is attached. RealityKit observes that initial
+            // transform before presenting the first frame.
             content.camera = .virtual
+            content.add(sceneCoordinator.cameraController.cameraEntity)
+            AppDebugLog.write("Camera entity attached to iOS 18+ RealityView")
+            content.add(sceneCoordinator.cameraController.orbitTargetEntity)
+            AppDebugLog.write("Orbit target attached to iOS 18+ RealityView")
+            content.add(sceneCoordinator.rootEntity)
+            AppDebugLog.write("Room/content root attached to iOS 18+ RealityView")
             content.cameraTarget = sceneCoordinator.cameraController.orbitTargetEntity
-            sceneCoordinator.startCameraDebugLogging()
+            let isNewScene = sceneCoordinator.synchronize(
+                scene: viewModel.scene,
+                selectedFurnitureID: viewModel.selectedFurnitureID
+            )
+            if isNewScene {
+                sceneCoordinator.requestInitialCameraReset(
+                    for: viewModel.scene.id,
+                    renderer: .realityView
+                )
+            }
+            AppDebugLog.write("RealityView scene creation completed")
         } update: { content in
-            sceneCoordinator.synchronize(
+            let isNewScene = sceneCoordinator.synchronize(
                 scene: viewModel.scene,
                 selectedFurnitureID: viewModel.selectedFurnitureID
             )
             content.cameraTarget = sceneCoordinator.cameraController.orbitTargetEntity
+            if isNewScene {
+                sceneCoordinator.requestInitialCameraReset(
+                    for: viewModel.scene.id,
+                    renderer: .realityView
+                )
+            }
         }
         // Let RealityView own camera input on iOS 18+. This is the supported
         // path for the virtual camera and avoids bridging recognizers through
@@ -113,30 +131,38 @@ private struct LegacyRealityRoomView: UIViewRepresentable {
         arView.environment.background = .color(UIColor(red: 0.88, green: 0.86, blue: 0.82, alpha: 1))
         arView.renderOptions.insert(.disableMotionBlur)
         sceneCoordinator.attachFallback(to: arView)
-        sceneCoordinator.synchronize(
+        let isNewScene = sceneCoordinator.synchronize(
             scene: scene,
             selectedFurnitureID: selectedFurnitureID
         )
+        if isNewScene {
+            sceneCoordinator.requestInitialCameraReset(
+                for: scene.id,
+                renderer: .arViewCompatibility
+            )
+        }
 
-        let tap = UITapGestureRecognizer(
-            target: context.coordinator,
-            action: #selector(InteractionCoordinator.handleTap(_:))
-        )
-        tap.cancelsTouchesInView = false
-        arView.addGestureRecognizer(tap)
+        context.coordinator.installTapRecognizer(on: arView)
         context.coordinator.cameraGestures.install(on: arView)
         return arView
     }
 
     func updateUIView(_ arView: ARView, context: Context) {
         context.coordinator.onSelect = onSelect
-        sceneCoordinator.synchronize(
+        let isNewScene = sceneCoordinator.synchronize(
             scene: scene,
             selectedFurnitureID: selectedFurnitureID
         )
+        if isNewScene {
+            sceneCoordinator.requestInitialCameraReset(
+                for: scene.id,
+                renderer: .arViewCompatibility
+            )
+        }
     }
 
     static func dismantleUIView(_ arView: ARView, coordinator: InteractionCoordinator) {
+        coordinator.removeTapRecognizer(from: arView)
         coordinator.cameraGestures.uninstall()
     }
 
@@ -145,6 +171,7 @@ private struct LegacyRealityRoomView: UIViewRepresentable {
         let sceneCoordinator: RoomSceneCoordinator
         let cameraGestures: RoomViewerControls
         var onSelect: (UUID?) -> Void
+        private weak var tapRecognizer: UITapGestureRecognizer?
 
         init(
             sceneCoordinator: RoomSceneCoordinator,
@@ -155,6 +182,25 @@ private struct LegacyRealityRoomView: UIViewRepresentable {
                 cameraController: sceneCoordinator.cameraController
             )
             self.onSelect = onSelect
+        }
+
+        func installTapRecognizer(on arView: ARView) {
+            guard tapRecognizer == nil else { return }
+            let tap = UITapGestureRecognizer(
+                target: self,
+                action: #selector(handleTap(_:))
+            )
+            tap.cancelsTouchesInView = false
+            arView.addGestureRecognizer(tap)
+            tapRecognizer = tap
+            AppDebugLog.write("Installed furniture tap recognizer")
+        }
+
+        func removeTapRecognizer(from arView: ARView) {
+            guard let tapRecognizer else { return }
+            arView.removeGestureRecognizer(tapRecognizer)
+            self.tapRecognizer = nil
+            AppDebugLog.write("Removed furniture tap recognizer")
         }
 
         @objc func handleTap(_ recognizer: UITapGestureRecognizer) {

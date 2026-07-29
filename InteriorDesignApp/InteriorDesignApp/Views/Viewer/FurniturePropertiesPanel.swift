@@ -2,18 +2,28 @@ import SwiftUI
 
 struct FurniturePropertiesPanel: View {
     @ObservedObject var viewModel: RoomViewerViewModel
+    var onClose: (() -> Void)?
+
+    @State private var showsMoveControls = false
+
+    init(viewModel: RoomViewerViewModel, onClose: (() -> Void)? = nil) {
+        self.viewModel = viewModel
+        self.onClose = onClose
+    }
 
     var body: some View {
         ScrollView {
             if let furniture = viewModel.selectedFurniture {
-                VStack(alignment: .leading, spacing: 26) {
+                VStack(alignment: .leading, spacing: 16) {
                     header(furniture)
-                    dimensions(furniture)
-                    position(furniture)
-                    rotation(furniture)
+                    actions
+                    if showsMoveControls {
+                        moveControls
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
                     metadata(furniture)
                 }
-                .padding(22)
+                .padding(18)
             } else {
                 ContentUnavailableView(
                     "Select furniture",
@@ -46,72 +56,51 @@ struct FurniturePropertiesPanel: View {
                     .font(.caption)
                     .foregroundStyle(AppTheme.secondaryInk)
             }
-        }
-    }
-
-    private func dimensions(_ furniture: FurnitureItem) -> some View {
-        VStack(alignment: .leading, spacing: 18) {
-            sectionTitle("Dimensions")
-            propertySlider(
-                title: "Width",
-                value: furniture.width,
-                range: 0.3...3.5,
-                onChange: { viewModel.updateSelected(width: $0) }
-            )
-            propertySlider(
-                title: "Depth",
-                value: furniture.depth,
-                range: 0.3...3.0,
-                onChange: { viewModel.updateSelected(depth: $0) }
-            )
-            propertySlider(
-                title: "Height",
-                value: furniture.height,
-                range: 0.2...2.5,
-                onChange: { viewModel.updateSelected(height: $0) }
-            )
-        }
-    }
-
-    private func position(_ furniture: FurnitureItem) -> some View {
-        let position = viewModel.positionMeters(for: furniture)
-        return VStack(alignment: .leading, spacing: 18) {
-            sectionTitle("Floor position")
-            propertySlider(
-                title: "Left / right",
-                value: position.x,
-                range: (-viewModel.scene.roomWidth / 2)...(viewModel.scene.roomWidth / 2),
-                onChange: { viewModel.updateSelected(positionX: $0) }
-            )
-            propertySlider(
-                title: "Front / back",
-                value: position.z,
-                range: (-viewModel.scene.roomDepth / 2)...(viewModel.scene.roomDepth / 2),
-                onChange: { viewModel.updateSelected(positionZ: $0) }
-            )
-        }
-    }
-
-    private func rotation(_ furniture: FurnitureItem) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            sectionTitle("Orientation")
-            HStack {
-                Image(systemName: "rotate.right")
-                    .foregroundStyle(AppTheme.accent)
-                Slider(
-                    value: Binding(
-                        get: { furniture.rotationDegrees },
-                        set: { viewModel.updateSelected(rotationDegrees: $0) }
-                    ),
-                    in: 0...360,
-                    step: 1
-                )
-                .tint(AppTheme.accent)
-                Text("\(Int(furniture.rotationDegrees))°")
-                    .font(.caption.monospacedDigit())
-                    .frame(width: 36, alignment: .trailing)
+            Spacer()
+            if let onClose {
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.caption.weight(.bold))
+                        .frame(width: 30, height: 30)
+                }
+                .buttonStyle(.bordered)
+                .clipShape(Circle())
+                .accessibilityLabel("Close properties")
             }
         }
+    }
+
+    private var actions: some View {
+        LazyVGrid(
+            columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3),
+            spacing: 8
+        ) {
+            actionButton("Move", systemImage: "arrow.up.and.down.and.arrow.left.and.right") {
+                showsMoveControls.toggle()
+            }
+            actionButton("Rotate", systemImage: "rotate.right") {
+                viewModel.rotateSelected()
+            }
+            actionButton("Replace", systemImage: "arrow.triangle.2.circlepath") {
+                viewModel.replaceSelectedWithNextCategory()
+            }
+            actionButton("Duplicate", systemImage: "plus.square.on.square") {
+                viewModel.duplicateSelected()
+            }
+            actionButton("Delete", systemImage: "trash", role: .destructive) {
+                viewModel.deleteSelected()
+            }
+        }
+    }
+
+    private var moveControls: some View {
+        HStack(spacing: 8) {
+            moveButton("arrow.left", x: -0.025, y: 0)
+            moveButton("arrow.up", x: 0, y: -0.025)
+            moveButton("arrow.down", x: 0, y: 0.025)
+            moveButton("arrow.right", x: 0.025, y: 0)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private func metadata(_ furniture: FurnitureItem) -> some View {
@@ -125,27 +114,32 @@ struct FurniturePropertiesPanel: View {
         }
     }
 
-    private func propertySlider(
-        title: String,
-        value: Double,
-        range: ClosedRange<Double>,
-        onChange: @escaping (Double) -> Void
+    private func actionButton(
+        _ title: String,
+        systemImage: String,
+        role: ButtonRole? = nil,
+        action: @escaping () -> Void
     ) -> some View {
-        VStack(spacing: 9) {
-            HStack {
+        Button(role: role, action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: systemImage)
+                    .font(.body.weight(.semibold))
                 Text(title)
-                    .font(.subheadline)
-                Spacer()
-                Text(value.formatted(.number.precision(.fractionLength(2))) + " m")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(AppTheme.secondaryInk)
+                    .font(.caption2.weight(.semibold))
             }
-            Slider(
-                value: Binding(get: { value }, set: onChange),
-                in: range
-            )
-            .tint(AppTheme.accent)
+            .frame(maxWidth: .infinity, minHeight: 50)
         }
+        .buttonStyle(.bordered)
+    }
+
+    private func moveButton(_ systemImage: String, x: Double, y: Double) -> some View {
+        Button {
+            viewModel.moveSelected(normalizedX: x, normalizedY: y)
+        } label: {
+            Image(systemName: systemImage)
+                .frame(maxWidth: .infinity, minHeight: 32)
+        }
+        .buttonStyle(.bordered)
     }
 
     private func sectionTitle(_ title: String) -> some View {

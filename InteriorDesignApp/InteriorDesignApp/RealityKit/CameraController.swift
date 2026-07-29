@@ -12,7 +12,6 @@ final class CameraController {
     private(set) var pitch: Float = 0.42
     private(set) var distance: Float = 8.0
 
-    private var defaultDistance: Float = 8.0
     var cameraDidChange: (() -> Void)?
 
     private let minimumPitch: Float = 0.12
@@ -32,25 +31,22 @@ final class CameraController {
         )
     }
 
-    func configure(for scene: RoomScene, reset: Bool) {
+    /// The single authoritative reset path for both initial presentation and
+    /// the Reset View button. `target` includes the accumulated pan offset.
+    func applyResetCamera(for scene: RoomScene, reason: String) {
         let largestRoomDimension = Float(max(scene.roomWidth, scene.roomDepth))
-        defaultDistance = min(
+        let defaultDistance = min(
             max(largestRoomDimension * 1.55, 5.5),
             12.0
         )
-        if reset {
-            resetView()
-        } else {
-            applyCameraTransform()
-        }
-    }
-
-    func resetView() {
         target = SIMD3<Float>(0, 1.05, 0)
         yaw = 0.48
         pitch = 0.42
         distance = defaultDistance
-        applyCameraTransform()
+        applyCameraTransform(debugGesture: "\(reason) reset")
+        AppDebugLog.write(
+            "Camera reset state applied; scene=\(scene.id) distance=\(distance) yaw=\(yaw) pitch=\(pitch) panTarget=\(target)"
+        )
     }
 
     func orbit(deltaX: CGFloat, deltaY: CGFloat) {
@@ -84,6 +80,10 @@ final class CameraController {
         guard previousPosition != position else { return }
         previousPosition = position
         logCameraPosition(position, gesture: "RealityView camera control")
+    }
+
+    var cameraPosition: SIMD3<Float> {
+        cameraEntity.position(relativeTo: nil)
     }
 
     private func applyCameraTransform(debugGesture: String? = nil) {
