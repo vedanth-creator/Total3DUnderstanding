@@ -52,7 +52,8 @@ struct HomeView: View {
                     Image(systemName: "sparkles")
                         .font(.title2)
                     Text("Imagine your room,\nbeautifully rethought.")
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .font(.largeTitle.bold())
+                        .fontDesign(.rounded)
                         .tracking(-1.1)
                 }
                 .foregroundStyle(.white)
@@ -122,4 +123,3 @@ struct HomeView: View {
         }
     }
 }
-

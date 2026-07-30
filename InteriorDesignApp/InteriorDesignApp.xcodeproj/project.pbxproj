@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXFileReference section */
+		A10000000000000000000005 /* InteriorDesignApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = InteriorDesignApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A10000000000000000000001 /* InteriorDesignApp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
@@ -67,16 +71,6 @@
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
-
-/* Begin PBXFileReference section */
-		A10000000000000000000005 /* InteriorDesignApp.app */ = {
-			isa = PBXFileReference;
-			explicitFileType = wrapper.application;
-			includeInIndex = 0;
-			path = InteriorDesignApp.app;
-			sourceTree = BUILT_PRODUCTS_DIR;
-		};
-/* End PBXFileReference section */
 
 /* Begin PBXProject section */
 		A1000000000000000000000A /* Project object */ = {
@@ -174,7 +168,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
-		};
+			};
 			name = Release;
 		};
 		A1000000000000000000000E /* Debug */ = {
@@ -184,9 +178,13 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Record a slow walkthrough video to create an editable room scan.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Choose a room photo to create an editable interior design.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -209,9 +207,13 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Record a slow walkthrough video to create an editable room scan.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Choose a room photo to create an editable interior design.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

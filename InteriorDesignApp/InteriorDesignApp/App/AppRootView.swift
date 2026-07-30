@@ -12,15 +12,46 @@ struct AppRootView: View {
             case .home:
                 HomeView(
                     viewModel: viewModel.homeViewModel,
-                    onStart: viewModel.showUpload,
+                    onStart: viewModel.showCaptureMethods,
                     onOpenSample: viewModel.openSampleScene
                 )
                 .transition(.appScreen)
 
+            case .captureMethod:
+                CaptureMethodView(
+                    viewModel: viewModel.captureMethodViewModel,
+                    onBack: viewModel.showHome,
+                    onRecordScan: viewModel.showVideoCapture,
+                    onUsePhotos: viewModel.showUpload,
+                    onUseSample: viewModel.openDefaultSampleScene,
+                    onVideoSelected: viewModel.showVideoReview
+                )
+                .transition(.appScreen)
+
+            case .videoCapture:
+                if let videoCaptureViewModel = viewModel.videoCaptureViewModel {
+                    RoomVideoCaptureView(
+                        viewModel: videoCaptureViewModel,
+                        onCancel: viewModel.showCaptureMethods,
+                        onVideoReady: viewModel.showVideoReview
+                    )
+                    .transition(.appScreen)
+                }
+
+            case .videoReview:
+                if let videoReviewViewModel = viewModel.videoReviewViewModel {
+                    VideoReviewView(
+                        viewModel: videoReviewViewModel,
+                        onRetake: viewModel.retakeVideo,
+                        onUseVideo: viewModel.beginVideoProcessing
+                    )
+                    .transition(.appScreen)
+                }
+
             case .upload:
                 UploadView(
                     viewModel: viewModel.uploadViewModel,
-                    onBack: viewModel.showHome,
+                    onBack: viewModel.showCaptureMethods,
                     onContinue: viewModel.beginProcessing
                 )
                 .transition(.appScreen)
@@ -29,7 +60,7 @@ struct AppRootView: View {
                 if let processingViewModel = viewModel.processingViewModel {
                     ProcessingView(
                         viewModel: processingViewModel,
-                        onCancel: viewModel.showUpload,
+                        onCancel: viewModel.cancelProcessing,
                         onComplete: viewModel.showViewer
                     )
                     .transition(.appScreen)
@@ -57,4 +88,3 @@ private extension AnyTransition {
         )
     }
 }
-
