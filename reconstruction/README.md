@@ -105,18 +105,30 @@ python -m reconstruction.scripts.prepare_nerfstudio_job \
 ```
 
 The preparer ranks every sparse model by registered images and then sparse
-points. It asks COLMAP `model_converter` for a temporary text export to obtain
-the authoritative registered filenames and camera count; camera poses are not
-parsed from binary data by this package. Only registered images are copied. The
-selected binary model files are copied byte-for-byte to `colmap/sparse/0/`;
-absolute source paths in the copied `project.ini` are normalized so they do not
-refer to the original machine:
+points. It reads the selected model's `cameras.bin`, `images.bin`, and
+`points3D.bin` directly. Only registered images are copied, with their COLMAP
+filenames preserved exactly. It writes `transforms.json` with the original
+intrinsics and distortion coefficients and converts COLMAP world-to-camera
+poses into Nerfstudio/OpenGL camera-to-world poses, using Nerfstudio's current
+COLMAP-to-z-up world transform. It also writes `sparse_pc.ply` with that same
+world transform so Splatfacto can initialize without interactive preprocessing.
+The selected binary model files are copied byte-for-byte to
+`colmap/sparse/0/`; absolute source paths in the copied `project.ini` are
+normalized so they do not refer to the original machine:
 
 ```text
 reconstruction/jobs/<job-id>/nerfstudio-data/
   images/
   colmap/sparse/0/
+  transforms.json
+  sparse_pc.ply
   dataset-manifest.json
+```
+
+The prepared directory can be passed directly to Nerfstudio:
+
+```bash
+ns-train splatfacto --data reconstruction/jobs/<job-id>/nerfstudio-data
 ```
 
 Options include `--model-id`, `--output-directory`, `--link-images`,

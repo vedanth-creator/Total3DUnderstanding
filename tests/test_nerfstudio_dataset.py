@@ -1,8 +1,12 @@
 import json
+import math
+import shutil
 import struct
+import subprocess
 import tarfile
 import tempfile
 import unittest
+import zlib
 from pathlib import Path
 
 from reconstruction.nerfstudio_dataset import (
@@ -12,6 +16,25 @@ from reconstruction.nerfstudio_dataset import (
     RegisteredImageMissingError,
     UnsafeDatasetPathError,
 )
+
+
+def make_test_png(width, height):
+    def chunk(kind, payload):
+        return (
+            struct.pack(">I", len(payload))
+            + kind
+            + payload
+            + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+        )
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    row = b"\0" + (b"\x80\x80\x80" * width)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(row * height))
+        + chunk(b"IEND", b"")
+    )
 
 
 class FakeModelConverterRunner:
@@ -62,24 +85,25 @@ class NerfstudioDatasetTest(unittest.TestCase):
         (self.job_directory / "database.db").write_bytes(b"database")
         (self.job_directory / "room-video.mov").write_bytes(b"video")
 
+        test_image = make_test_png(1200, 800)
         for index in range(6):
-            (self.images_directory / ("frame_%08d.jpg" % index)).write_bytes(
-                ("image-%d" % index).encode("ascii")
+            (self.images_directory / ("frame_%08d.png" % index)).write_bytes(
+                test_image
             )
 
         self.registered = {
-            "0": ["frame_00000000.jpg", "frame_00000001.jpg"],
+            "0": ["frame_00000000.png", "frame_00000001.png"],
             "1": [
-                "frame_00000000.jpg",
-                "frame_00000002.jpg",
-                "frame_00000003.jpg",
-                "frame_00000005.jpg",
+                "frame_00000000.png",
+                "frame_00000002.png",
+                "frame_00000003.png",
+                "frame_00000005.png",
             ],
             "2": [
-                "frame_00000000.jpg",
-                "frame_00000001.jpg",
-                "frame_00000002.jpg",
-                "frame_00000003.jpg",
+                "frame_00000000.png",
+                "frame_00000001.png",
+                "frame_00000002.png",
+                "frame_00000003.png",
             ],
         }
         self._make_model("0", registered=2, points=100)
@@ -94,9 +118,44 @@ class NerfstudioDatasetTest(unittest.TestCase):
     def _make_model(self, model_id, registered, points):
         model = self.sparse_directory / model_id
         model.mkdir()
-        (model / "cameras.bin").write_bytes(struct.pack("<Q", 1))
-        (model / "images.bin").write_bytes(struct.pack("<Q", registered))
-        (model / "points3D.bin").write_bytes(struct.pack("<Q", points))
+        camera_payload = struct.pack("<QIiQQ4d", 1, 1, 2, 1200, 800, 1000, 600, 400, 0.01)
+        (model / "cameras.bin").write_bytes(camera_payload)
+        image_payload = bytearray(struct.pack("<Q", registered))
+        for image_id, name in enumerate(self.registered[model_id], start=1):
+            image_payload.extend(
+                struct.pack(
+                    "<I7dI",
+                    image_id,
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    float(image_id),
+                    2.0,
+                    3.0,
+                    1,
+                )
+            )
+            image_payload.extend(name.encode("utf-8") + b"\0")
+            image_payload.extend(struct.pack("<Q", 0))
+        (model / "images.bin").write_bytes(bytes(image_payload))
+        point_payload = bytearray(struct.pack("<Q", points))
+        for point_id in range(1, points + 1):
+            point_payload.extend(
+                struct.pack(
+                    "<Q3d3BdQ",
+                    point_id,
+                    float(point_id),
+                    0.0,
+                    0.0,
+                    128,
+                    128,
+                    128,
+                    0.1,
+                    0,
+                )
+            )
+        (model / "points3D.bin").write_bytes(bytes(point_payload))
         (model / "frames.bin").write_bytes(b"frames")
         (model / "rigs.bin").write_bytes(b"rigs")
         (model / "project.ini").write_text(
@@ -130,17 +189,65 @@ class NerfstudioDatasetTest(unittest.TestCase):
             for path in (prepared.dataset_directory / "images").iterdir()
         )
         self.assertEqual(copied, sorted(self.registered["1"]))
-        self.assertNotIn("frame_00000004.jpg", copied)
+        self.assertNotIn("frame_00000004.png", copied)
         self.assertEqual(prepared.manifest.extracted_frame_count, 6)
         self.assertEqual(prepared.manifest.copied_image_count, 4)
 
+    def test_transforms_json_preserves_intrinsics_names_and_opengl_poses(self) -> None:
+        prepared = self.prepare()
+        transforms = json.loads(
+            (prepared.dataset_directory / "transforms.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        self.assertEqual(transforms["camera_model"], "OPENCV")
+        self.assertEqual(transforms["w"], 1200)
+        self.assertEqual(transforms["h"], 800)
+        self.assertEqual(transforms["fl_x"], 1000)
+        self.assertEqual(transforms["fl_y"], 1000)
+        self.assertEqual(transforms["cx"], 600)
+        self.assertEqual(transforms["cy"], 400)
+        self.assertEqual(transforms["k1"], 0.01)
+        self.assertEqual(transforms["k2"], 0.0)
+        self.assertEqual(transforms["p1"], 0.0)
+        self.assertEqual(transforms["p2"], 0.0)
+        self.assertAlmostEqual(
+            transforms["camera_angle_x"],
+            2.0 * math.atan(1200 / 2000),
+        )
+        self.assertEqual(
+            [frame["file_path"] for frame in transforms["frames"]],
+            ["images/" + name for name in self.registered["1"]],
+        )
+        self.assertEqual(
+            transforms["frames"][0]["transform_matrix"],
+            [
+                [1.0, -0.0, -0.0, -1.0],
+                [0.0, -0.0, -1.0, -3.0],
+                [-0.0, 1.0, 0.0, 2.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+        )
+        self.assertEqual(
+            transforms["applied_transform"],
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, -1.0, 0.0, 0.0],
+            ],
+        )
+        self.assertEqual(transforms["ply_file_path"], "sparse_pc.ply")
+        point_cloud = (prepared.dataset_directory / "sparse_pc.ply").read_text()
+        self.assertIn("element vertex 500", point_cloud)
+
     def test_missing_registered_image_fails_clearly(self) -> None:
-        (self.images_directory / "frame_00000005.jpg").unlink()
+        (self.images_directory / "frame_00000005.png").unlink()
 
         with self.assertRaises(RegisteredImageMissingError) as context:
             self.prepare()
 
-        self.assertEqual(context.exception.missing_images, ("frame_00000005.jpg",))
+        self.assertEqual(context.exception.missing_images, ("frame_00000005.png",))
         self.assertFalse((self.job_directory / "nerfstudio-data").exists())
 
     def test_selected_model_is_normalized_to_colmap_sparse_zero(self) -> None:
@@ -171,6 +278,8 @@ class NerfstudioDatasetTest(unittest.TestCase):
         with tarfile.open(prepared.archive_path, "r:gz") as archive:
             names = set(archive.getnames())
         self.assertIn("nerfstudio-data/dataset-manifest.json", names)
+        self.assertIn("nerfstudio-data/transforms.json", names)
+        self.assertIn("nerfstudio-data/sparse_pc.ply", names)
         self.assertIn(
             "nerfstudio-data/colmap/sparse/0/images.bin",
             names,
@@ -244,6 +353,36 @@ class NerfstudioDatasetTest(unittest.TestCase):
 
         payload = json.loads(json.dumps(manifest.to_dict()))
         self.assertIsNone(payload["sparse_point_count"])
+
+    def test_ns_train_splatfacto_accepts_prepared_dataset_when_installed(self) -> None:
+        ns_train = shutil.which("ns-train")
+        if ns_train is None:
+            self.skipTest("ns-train is not installed in this environment")
+        prepared = self.prepare()
+
+        completed = subprocess.run(
+            [
+                ns_train,
+                "splatfacto",
+                "--data",
+                str(prepared.dataset_directory),
+                "--max-num-iterations",
+                "0",
+                "--vis",
+                "tensorboard",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg="ns-train rejected the prepared dataset:\n%s\n%s"
+            % (completed.stdout, completed.stderr),
+        )
 
 
 if __name__ == "__main__":

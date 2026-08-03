@@ -47,7 +47,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--colmap-binary",
         default="colmap",
-        help="COLMAP executable name or path (default: colmap).",
+        help=(
+            "Retained for CLI compatibility; preparation now reads the selected "
+            "COLMAP binary model directly and does not invoke this executable."
+        ),
     )
     parser.add_argument(
         "--force",
