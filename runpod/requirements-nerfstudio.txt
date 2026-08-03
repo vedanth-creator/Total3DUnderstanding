@@ -1,0 +1,5 @@
+# CUDA-enabled PyTorch is installed separately from the official cu118 index.
+nerfstudio==1.1.5
+gsplat==1.4.0
+numpy<2
+ninja>=1.11,<2
