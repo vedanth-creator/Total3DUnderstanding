@@ -39,7 +39,10 @@ struct InteriorDesignApp: App {
     @UIApplicationDelegateAdaptor(AppLifecycleDelegate.self) private var appDelegate
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var appViewModel = AppViewModel(
-        designService: MockRoomDesignService()
+        designService: MockRoomDesignService(),
+        roomScanService: URLSessionRoomScanService(
+            baseURL: APIConfiguration.development.baseURL
+        )
     )
 
     var body: some Scene {

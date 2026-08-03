@@ -27,7 +27,7 @@ struct ProcessingView: View {
                         .font(.body)
                         .foregroundStyle(AppTheme.secondaryInk)
                     if viewModel.isVideoProcessing {
-                        Text("Mock analysis · sample scene output")
+                        Text("Backend job · sample normalized scene output")
                             .font(.caption.weight(.medium))
                             .foregroundStyle(AppTheme.accent)
                     }
@@ -47,10 +47,19 @@ struct ProcessingView: View {
                     .accessibilityValue("\(Int(viewModel.analysisProgress * 100)) percent")
 
                 if case let .failed(message) = viewModel.analysisState {
-                    Text(message)
-                        .font(.callout)
-                        .foregroundStyle(.red)
-                        .transition(.opacity)
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(message)
+                            .font(.callout)
+                            .foregroundStyle(.red)
+
+                        Button("Retry") {
+                            viewModel.retry()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(AppTheme.accent)
+                        .accessibilityHint("Uploads the room scan again")
+                    }
+                    .transition(.opacity)
                 }
 
                 Spacer()

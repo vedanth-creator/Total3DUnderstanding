@@ -41,8 +41,10 @@ final class ProcessingViewModel: ObservableObject {
         roomScanVideo != nil
     }
 
-    private let designService: RoomDesignProviding
+    private let designService: RoomDesignProviding?
+    private let roomScanService: RoomScanSubmitting?
     private var processingTask: Task<Void, Never>?
+    private var completionHandler: (@MainActor (RoomScene) -> Void)?
 
     init(
         room: SampleRoom,
@@ -52,6 +54,7 @@ final class ProcessingViewModel: ObservableObject {
         self.room = room
         input = .photo(selectedPhoto)
         self.designService = designService
+        roomScanService = nil
         steps = [
             AnalysisStep(id: 0, title: "Uploading room"),
             AnalysisStep(id: 1, title: "Detecting walls"),
@@ -65,11 +68,12 @@ final class ProcessingViewModel: ObservableObject {
     init(
         room: SampleRoom,
         roomScanVideo: RoomScanVideo,
-        designService: RoomDesignProviding
+        roomScanService: RoomScanSubmitting
     ) {
         self.room = room
         input = .video(roomScanVideo)
-        self.designService = designService
+        designService = nil
+        self.roomScanService = roomScanService
         steps = [
             AnalysisStep(id: 0, title: "Preparing video"),
             AnalysisStep(id: 1, title: "Extracting key frames"),
@@ -82,46 +86,131 @@ final class ProcessingViewModel: ObservableObject {
 
     func start(onComplete: @escaping @MainActor (RoomScene) -> Void) {
         guard processingTask == nil else { return }
+        completionHandler = onComplete
+        beginProcessing()
+    }
+
+    func retry() {
+        guard case .failed = analysisState,
+              processingTask == nil,
+              completionHandler != nil else { return }
+
+        analysisProgress = 0
+        completedStepCount = 0
+        analysisState = .idle
+        beginProcessing()
+    }
+
+    private func beginProcessing() {
+        guard let completionHandler else { return }
 
         processingTask = Task {
             analysisState = .analyzing
+            defer { processingTask = nil }
 
-            for index in steps.indices {
-                guard !Task.isCancelled else { return }
-                do {
-                    try await Task.sleep(
-                        nanoseconds: isVideoProcessing ? 600_000_000 : 520_000_000
-                    )
-                } catch {
-                    return
-                }
-                withAnimation(.easeInOut(duration: 0.4)) {
-                    completedStepCount = index + 1
-                    analysisProgress = Double(completedStepCount) / Double(steps.count)
-                }
-            }
-
-            guard !Task.isCancelled else { return }
             do {
-                let scene = try await designService.createScene(for: room)
+                let scene: RoomScene
+                switch input {
+                case .photo:
+                    scene = try await processPhoto()
+                case .video(let video):
+                    scene = try await processVideo(video)
+                }
+
+                try Task.checkCancellation()
                 withAnimation(.easeOut(duration: 0.3)) {
+                    analysisProgress = 1
+                    completedStepCount = steps.count
                     analysisState = .completed
                 }
-                do {
-                    try await Task.sleep(nanoseconds: 350_000_000)
-                } catch {
-                    return
-                }
-                guard !Task.isCancelled else { return }
-                onComplete(scene)
+                try await Task.sleep(nanoseconds: 350_000_000)
+                try Task.checkCancellation()
+                completionHandler(scene)
+            } catch is CancellationError {
+                return
             } catch {
-                analysisState = .failed("We couldn’t prepare your room. Please try again.")
+                analysisState = .failed(error.localizedDescription)
             }
+        }
+    }
+
+    private func processPhoto() async throws -> RoomScene {
+        guard let designService else {
+            throw ProcessingError.missingPhotoService
+        }
+
+        for index in steps.indices {
+            try Task.checkCancellation()
+            try await Task.sleep(nanoseconds: 520_000_000)
+            withAnimation(.easeInOut(duration: 0.4)) {
+                completedStepCount = index + 1
+                analysisProgress = Double(completedStepCount) / Double(steps.count)
+            }
+        }
+
+        return try await designService.createScene(for: room)
+    }
+
+    private func processVideo(_ video: RoomScanVideo) async throws -> RoomScene {
+        guard let roomScanService else {
+            throw ProcessingError.missingRoomScanService
+        }
+
+        let accepted = try await roomScanService.submit(video)
+        try await roomScanService.pollUntilCompleted(jobID: accepted.jobID) { [weak self] job in
+            Task { @MainActor in
+                self?.apply(jobProgress: job)
+            }
+        }
+
+        let backendScene = try await roomScanService.fetchScene(jobID: accepted.jobID)
+        return try BackendSceneAdapter.makeRoomScene(from: backendScene, jobID: accepted.jobID)
+    }
+
+    private func apply(jobProgress job: RoomScanJobResponse) {
+        let boundedProgress = min(max(job.progress, 0), 1)
+        let stageIndex: Int
+        switch job.stage {
+        case "queued", "preparing_video":
+            stageIndex = 0
+        case "extracting_key_frames":
+            stageIndex = 1
+        case "estimating_camera_motion":
+            stageIndex = 2
+        case "reconstructing_room_geometry":
+            stageIndex = 3
+        case "identifying_walls_and_furniture":
+            stageIndex = 4
+        case "preparing_editable_workspace":
+            stageIndex = 5
+        case "completed":
+            stageIndex = steps.count
+        default:
+            stageIndex = min(Int(boundedProgress * Double(steps.count)), steps.count)
+        }
+
+        withAnimation(.easeInOut(duration: 0.3)) {
+            analysisProgress = boundedProgress
+            completedStepCount = min(max(stageIndex, 0), steps.count)
         }
     }
 
     func cancel() {
         processingTask?.cancel()
         processingTask = nil
+    }
+}
+
+private enum ProcessingError: LocalizedError {
+    case missingPhotoService
+    case missingRoomScanService
+
+    var errorDescription: String? {
+        switch self {
+        case .missingPhotoService:
+            return "The photo processing service is unavailable."
+        case .missingRoomScanService:
+            return "The room scan service is unavailable."
+        }
     }
 }

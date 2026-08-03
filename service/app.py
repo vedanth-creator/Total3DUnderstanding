@@ -1,10 +1,12 @@
-"""Minimal CPU-only FastAPI application for the normalized scene pipeline.
+"""CPU-only FastAPI application for scene and room-scan milestones.
 
 The default application intentionally uses static detections and a fake GPU
 response. ``create_app`` accepts factories so those boundaries can later be
 replaced without changing the HTTP contract.
 """
 
+from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from fastapi import Body, FastAPI, HTTPException
@@ -26,6 +28,11 @@ from service.providers import (
     ScaledCanonicalIntrinsicsProvider,
     StaticDetectionProvider,
 )
+from service.job_repository import FileJobRepository
+from service.reconstruction import FakeReconstructionProcessor
+from service.room_scan_routes import SceneFactory, create_room_scan_router
+from service.sample_scene import make_sample_scene
+from service.upload_storage import LocalUploadStorage
 
 
 DetectionProviderFactory = Callable[
@@ -149,6 +156,12 @@ def create_app(
     detection_provider_factory: Optional[DetectionProviderFactory] = None,
     intrinsics_provider: Optional[IntrinsicsProvider] = None,
     gpu_client_factory: Optional[GPUClientFactory] = None,
+    storage_root: Optional[Path] = None,
+    maximum_upload_bytes: int = 500 * 1024 * 1024,
+    job_repository: Optional[FileJobRepository] = None,
+    upload_storage: Optional[LocalUploadStorage] = None,
+    reconstruction_processor: Optional[FakeReconstructionProcessor] = None,
+    room_scan_scene_factory: Optional[SceneFactory] = None,
 ) -> FastAPI:
     """Create the HTTP application with replaceable pipeline dependencies."""
 
@@ -157,8 +170,35 @@ def create_app(
     )
     camera_provider = intrinsics_provider or ScaledCanonicalIntrinsicsProvider()
     client_factory = gpu_client_factory or _fake_gpu_client_factory
+    local_storage_root = (storage_root or Path("storage")).resolve()
+    repository = job_repository or FileJobRepository(local_storage_root / "jobs")
+    video_storage = upload_storage or LocalUploadStorage(
+        local_storage_root,
+        maximum_upload_bytes=maximum_upload_bytes,
+    )
+    processor = reconstruction_processor or FakeReconstructionProcessor(repository)
+    scene_factory = room_scan_scene_factory or make_sample_scene
 
-    application = FastAPI(title="Total3D CPU-only scene API", version="0.1.0")
+    @asynccontextmanager
+    async def lifespan(application: FastAPI):
+        del application
+        processor.resume_incomplete()
+        yield
+        processor.shutdown()
+
+    application = FastAPI(
+        title="Total3D CPU-only scene API",
+        version="0.2.0",
+        lifespan=lifespan,
+    )
+    application.include_router(
+        create_room_scan_router(
+            repository=repository,
+            upload_storage=video_storage,
+            processor=processor,
+            scene_factory=scene_factory,
+        )
+    )
 
     @application.get("/health")
     def health() -> Dict[str, str]:
@@ -200,4 +240,3 @@ def create_app(
 
 
 app = create_app()
-

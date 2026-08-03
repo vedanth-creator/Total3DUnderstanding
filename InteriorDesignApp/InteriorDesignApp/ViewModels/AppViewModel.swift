@@ -23,9 +23,14 @@ final class AppViewModel: ObservableObject {
     let captureMethodViewModel = CaptureMethodViewModel()
 
     private let designService: RoomDesignProviding
+    private let roomScanService: RoomScanSubmitting
 
-    init(designService: RoomDesignProviding) {
+    init(
+        designService: RoomDesignProviding,
+        roomScanService: RoomScanSubmitting
+    ) {
         self.designService = designService
+        self.roomScanService = roomScanService
         AppDebugLog.write("AppViewModel initialized")
     }
 
@@ -81,7 +86,7 @@ final class AppViewModel: ObservableObject {
         processingViewModel = ProcessingViewModel(
             room: room,
             roomScanVideo: video,
-            designService: designService
+            roomScanService: roomScanService
         )
         route = .processing
     }

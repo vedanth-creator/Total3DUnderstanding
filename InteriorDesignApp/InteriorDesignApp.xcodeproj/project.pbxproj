@@ -10,9 +10,22 @@
 		A10000000000000000000005 /* InteriorDesignApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = InteriorDesignApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		A10000000000000000000010 /* Exceptions for "InteriorDesignApp" folder in "InteriorDesignApp" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = A10000000000000000000006 /* InteriorDesignApp */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A10000000000000000000001 /* InteriorDesignApp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A10000000000000000000010 /* Exceptions for "InteriorDesignApp" folder in "InteriorDesignApp" target */,
+			);
 			path = InteriorDesignApp;
 			sourceTree = "<group>";
 		};
@@ -177,9 +190,8 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = RASAK9UWB2;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Record a slow walkthrough video to create an editable room scan.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Choose a room photo to create an editable interior design.";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = InteriorDesignApp/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -206,9 +218,8 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = RASAK9UWB2;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Record a slow walkthrough video to create an editable room scan.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Choose a room photo to create an editable interior design.";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = InteriorDesignApp/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

@@ -1,3 +1,6 @@
 
 out/pretrained_models/
 .venv-service/
+storage/
+
+reconstruction/jobs/
