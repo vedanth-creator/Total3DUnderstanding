@@ -9,8 +9,15 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      gcc-11 g++-11 python3 python3-pip curl && \
-    rm -rf /var/lib/apt/lists/*
+    gcc-11 \
+    g++-11 \
+    python3 \
+    python3-dev \
+    python3-pip \
+    build-essential \
+    cmake \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 RUN python3 -m pip install pip==24.3.1 setuptools==75.6.0 wheel==0.45.1 && \
     python3 -m pip install torch==2.1.2+cu118 torchvision==0.16.2+cu118 \
       --extra-index-url https://download.pytorch.org/whl/cu118
