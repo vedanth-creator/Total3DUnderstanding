@@ -16,13 +16,14 @@ enum RoomVideoCaptureState: Equatable {
 
 @MainActor
 final class RoomVideoCaptureViewModel: ObservableObject {
-    static let minimumDuration: TimeInterval = 10
     static let maximumDuration: TimeInterval = 90
+    static let lowCoverageWarningThreshold = 0.70
 
     @Published private(set) var state: RoomVideoCaptureState = .idle
     @Published private(set) var elapsedTime: TimeInterval = 0
     @Published private(set) var mockedCoverageProgress = 0.0
     @Published private(set) var guidanceWarning: String?
+    @Published var isLowCoverageConfirmationPresented = false
     @Published var errorMessage: String?
 
     let captureService: RoomVideoCapturing
@@ -35,10 +36,6 @@ final class RoomVideoCaptureViewModel: ObservableObject {
         "Return toward your starting view before finishing"
     ]
 
-    var canStopRecording: Bool {
-        elapsedTime >= Self.minimumDuration
-    }
-
     var isRecording: Bool {
         state == .recording
     }
@@ -46,11 +43,6 @@ final class RoomVideoCaptureViewModel: ObservableObject {
     var elapsedTimeText: String {
         let seconds = Int(elapsedTime.rounded(.down))
         return String(format: "%01d:%02d", seconds / 60, seconds % 60)
-    }
-
-    var minimumDurationMessage: String? {
-        guard isRecording, !canStopRecording else { return nil }
-        return "Keep scanning for \(Int(ceil(Self.minimumDuration - elapsedTime))) more seconds"
     }
 
     var isSimulatorTestMode: Bool {
@@ -124,9 +116,23 @@ final class RoomVideoCaptureViewModel: ObservableObject {
         }
     }
 
-    func stopRecording() {
-        guard isRecording, canStopRecording else { return }
+    func requestStopRecording() {
+        guard isRecording else { return }
+        if mockedCoverageProgress < Self.lowCoverageWarningThreshold {
+            isLowCoverageConfirmationPresented = true
+        } else {
+            finishRecording()
+        }
+    }
+
+    func finishLowCoverageRecording() {
+        guard isRecording else { return }
+        isLowCoverageConfirmationPresented = false
         finishRecording()
+    }
+
+    func continueScanning() {
+        isLowCoverageConfirmationPresented = false
     }
 
     func cancelRecording() {
@@ -137,6 +143,7 @@ final class RoomVideoCaptureViewModel: ObservableObject {
         state = isSimulatorTestMode ? .simulatorTestInput : .ready
         elapsedTime = 0
         mockedCoverageProgress = 0
+        isLowCoverageConfirmationPresented = false
     }
 
     func stopSession() {
@@ -152,13 +159,8 @@ final class RoomVideoCaptureViewModel: ObservableObject {
             captureService.stopSession()
             return
         }
-        // A file recording cannot be paused safely. Preserve only a useful completed scan.
-        if canStopRecording {
-            finishRecording()
-        } else {
-            cancelRecording()
-            state = .interrupted("The short recording was discarded when the app entered the background.")
-        }
+        // A file recording cannot be paused safely, so preserve the completed portion.
+        finishRecording()
     }
 
     func resumeAfterBackgrounding() async {
@@ -180,11 +182,6 @@ final class RoomVideoCaptureViewModel: ObservableObject {
         guard isSimulatorTestMode else { return }
         do {
             let video = try await videoImporter.importVideo(from: item)
-            guard video.duration >= Self.minimumDuration else {
-                try? FileManager.default.removeItem(at: video.localFileURL)
-                errorMessage = "Choose a test video that is at least 10 seconds long."
-                return
-            }
             deliver(video)
         } catch is CancellationError {
             return
@@ -220,6 +217,7 @@ final class RoomVideoCaptureViewModel: ObservableObject {
         timerTask = nil
         stopMotionUpdates()
         state = .finishing
+        isLowCoverageConfirmationPresented = false
         captureService.stopRecording()
     }
 
@@ -297,11 +295,7 @@ final class RoomVideoCaptureViewModel: ObservableObject {
     private func handleInterruption(interrupted: Bool, message: String?) {
         if interrupted {
             if isRecording {
-                if canStopRecording {
-                    finishRecording()
-                } else {
-                    cancelRecording()
-                }
+                finishRecording()
             }
             state = .interrupted(message ?? "The camera session was interrupted.")
         } else if !isRecording {

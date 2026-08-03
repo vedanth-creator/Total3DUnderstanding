@@ -5,7 +5,6 @@ struct FurnitureEntityRecord {
     let root: Entity
     let box: ModelEntity
     let selectionOutline: SelectionOutline
-    let label: ModelEntity?
 }
 
 struct SelectionOutline {
@@ -45,16 +44,10 @@ enum EntityFactory {
         selectionOutline.root.isEnabled = false
         root.addChild(selectionOutline.root)
 
-        let label = makeLabel(furniture.name)
-        if let label {
-            root.addChild(label)
-        }
-
         return FurnitureEntityRecord(
             root: root,
             box: box,
-            selectionOutline: selectionOutline,
-            label: label
+            selectionOutline: selectionOutline
         )
     }
 
@@ -85,7 +78,6 @@ enum EntityFactory {
         record.box.model?.materials = [furnitureMaterial(hex: furniture.colorHex)]
 
         updateSelectionOutline(record.selectionOutline, dimensions: dimensions)
-        record.label?.position = SIMD3<Float>(0, dimensions.y + 0.16, 0)
     }
 
     static func makeRoomSurface(
@@ -203,23 +195,6 @@ enum EntityFactory {
         }
     }
 
-    private static func makeLabel(_ text: String) -> ModelEntity? {
-        guard #available(iOS 18.0, *) else { return nil }
-        let mesh = MeshResource.generateText(
-            text,
-            extrusionDepth: 0.004,
-            font: .systemFont(ofSize: 0.13, weight: .semibold),
-            containerFrame: CGRect(x: -0.9, y: -0.12, width: 1.8, height: 0.24),
-            alignment: .center,
-            lineBreakMode: .byTruncatingTail
-        )
-        var material = UnlitMaterial()
-        material.color = .init(tint: UIColor(white: 0.16, alpha: 0.92))
-        let label = ModelEntity(mesh: mesh, materials: [material])
-        label.name = "furniture-label"
-        label.components.set(BillboardComponent())
-        return label
-    }
 }
 
 private extension UIColor {

@@ -77,6 +77,16 @@ struct RoomVideoCaptureView: View {
         } message: {
             Text(viewModel.errorMessage ?? "Please try again.")
         }
+        .confirmationDialog(
+            "Finish this scan?",
+            isPresented: $viewModel.isLowCoverageConfirmationPresented,
+            titleVisibility: .visible
+        ) {
+            Button("Finish Anyway", action: viewModel.finishLowCoverageRecording)
+            Button("Continue Scanning", role: .cancel, action: viewModel.continueScanning)
+        } message: {
+            Text("This scan may not capture the entire room and could reduce reconstruction quality. Room coverage is currently a mocked estimate, not a geometric measurement.")
+        }
     }
 
     private var recorderHeader: some View {
@@ -127,23 +137,13 @@ struct RoomVideoCaptureView: View {
             }
             .accessibilityHint("Uses an existing video instead of a simulator camera")
         } else if viewModel.isRecording {
-            VStack(spacing: 8) {
-                Button(action: viewModel.stopRecording) {
-                    ZStack {
-                        Circle().fill(.white).frame(width: 76, height: 76)
-                        RoundedRectangle(cornerRadius: 7).fill(.red).frame(width: 28, height: 28)
-                    }
-                }
-                .disabled(!viewModel.canStopRecording)
-                .opacity(viewModel.canStopRecording ? 1 : 0.55)
-                .accessibilityLabel("Stop recording")
-
-                if let message = viewModel.minimumDurationMessage {
-                    Text(message)
-                        .font(.caption)
-                        .foregroundStyle(.white)
+            Button(action: viewModel.requestStopRecording) {
+                ZStack {
+                    Circle().fill(.white).frame(width: 76, height: 76)
+                    RoundedRectangle(cornerRadius: 7).fill(.red).frame(width: 28, height: 28)
                 }
             }
+            .accessibilityLabel("Stop recording")
         } else if viewModel.state == .ready {
             Button {
                 Task { await viewModel.startRecording() }
