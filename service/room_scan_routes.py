@@ -5,6 +5,7 @@ from typing import Any, Callable, Dict, Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import RedirectResponse
 
 from service.api_schemas import (
     ClientScanMetadata,
@@ -20,6 +21,7 @@ from service.upload_storage import (
     UploadTooLargeError,
     UploadValidationError,
 )
+from service.training_orchestrator import TrainingOrchestrator
 
 
 SceneFactory = Callable[[RoomScanJob], SceneResult]
@@ -95,6 +97,7 @@ def create_room_scan_router(
     upload_storage: LocalUploadStorage,
     processor: FakeReconstructionProcessor,
     scene_factory: SceneFactory,
+    training_orchestrator: Optional[TrainingOrchestrator] = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/v1/room-scans", tags=["room-scans"])
 
@@ -166,5 +169,26 @@ def create_room_scan_router(
                 "Room-scan scene is not available until the job completes.",
             )
         return scene_factory(job).to_dict()
+
+    @router.post("/{job_id}/cancel")
+    def cancel_training(job_id: str) -> Dict[str, Any]:
+        if training_orchestrator is None:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Remote training is not configured.")
+        try:
+            return training_orchestrator.cancel(job_id).to_dict()
+        except (KeyError, InvalidJobIDError) as error:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Room-scan job not found.") from error
+
+    @router.get("/{job_id}/artifacts/{artifact_kind}")
+    def download_artifact(job_id: str, artifact_kind: str) -> RedirectResponse:
+        if training_orchestrator is None:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Remote training is not configured.")
+        if artifact_kind not in {"splat", "training_archive", "logs"}:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Artifact not found.")
+        try:
+            url = training_orchestrator.artifact_url(job_id, artifact_kind)
+        except (KeyError, InvalidJobIDError) as error:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Artifact not found.") from error
+        return RedirectResponse(url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
     return router

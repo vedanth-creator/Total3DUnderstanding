@@ -4,3 +4,8 @@ out/pretrained_models/
 storage/
 
 reconstruction/jobs/
+
+models/
+*.ckpt
+*.ply
+*.tar.gz

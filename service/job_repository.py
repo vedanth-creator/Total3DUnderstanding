@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import threading
 from typing import List, Optional
+from dataclasses import replace
 from uuid import UUID
 
 from service.api_schemas import (
@@ -81,17 +82,13 @@ class FileJobRepository:
             existing = self.get(job_id)
             if existing is None:
                 raise KeyError(job_id)
-            updated = RoomScanJob(
-                job_id=existing.job_id,
+            updated = replace(
+                existing,
                 status=status,
                 progress=min(max(float(progress), 0.0), 1.0),
                 stage=stage,
                 error=error,
-                created_at=existing.created_at,
                 updated_at=utc_now_iso(),
-                upload_relative_path=existing.upload_relative_path,
-                upload_size_bytes=existing.upload_size_bytes,
-                client_metadata=existing.client_metadata,
             )
             self._write(updated)
             return updated
@@ -112,6 +109,15 @@ class FileJobRepository:
         with self._lock:
             if path.exists():
                 path.unlink()
+
+    def save(self, job: RoomScanJob) -> RoomScanJob:
+        canonical_job_id(job.job_id)
+        with self._lock:
+            if not self._path_for(job.job_id).is_file():
+                raise KeyError(job.job_id)
+            persisted = replace(job, updated_at=utc_now_iso())
+            self._write(persisted)
+            return persisted
 
     def _path_for(self, job_id: str) -> Path:
         canonical = canonical_job_id(job_id)

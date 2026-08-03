@@ -33,6 +33,7 @@ from service.reconstruction import FakeReconstructionProcessor
 from service.room_scan_routes import SceneFactory, create_room_scan_router
 from service.sample_scene import make_sample_scene
 from service.upload_storage import LocalUploadStorage
+from service.training_orchestrator import TrainingOrchestrator
 
 
 DetectionProviderFactory = Callable[
@@ -162,6 +163,7 @@ def create_app(
     upload_storage: Optional[LocalUploadStorage] = None,
     reconstruction_processor: Optional[FakeReconstructionProcessor] = None,
     room_scan_scene_factory: Optional[SceneFactory] = None,
+    training_orchestrator: Optional[TrainingOrchestrator] = None,
 ) -> FastAPI:
     """Create the HTTP application with replaceable pipeline dependencies."""
 
@@ -183,6 +185,8 @@ def create_app(
     async def lifespan(application: FastAPI):
         del application
         processor.resume_incomplete()
+        if training_orchestrator is not None:
+            training_orchestrator.reconcile_once()
         yield
         processor.shutdown()
 
@@ -197,6 +201,7 @@ def create_app(
             upload_storage=video_storage,
             processor=processor,
             scene_factory=scene_factory,
+            training_orchestrator=training_orchestrator,
         )
     )
 
