@@ -91,3 +91,36 @@ image and point counts, matcher used, retry outcome, total duration, failure
 reason, and conservative capture recommendations when fewer than 20% of frames
 register. Recommendations describe possible causes rather than claiming that
 blur, texture, overlap, or parallax was directly measured.
+
+## Prepare a Nerfstudio dataset
+
+An existing sparse reconstruction can be converted into a portable dataset for
+Nerfstudio without rerunning feature extraction, matching, or mapping:
+
+```bash
+python -m reconstruction.scripts.prepare_nerfstudio_job \
+  --job-id <job-id> \
+  --workspace-root reconstruction/jobs \
+  --archive
+```
+
+The preparer ranks every sparse model by registered images and then sparse
+points. It asks COLMAP `model_converter` for a temporary text export to obtain
+the authoritative registered filenames and camera count; camera poses are not
+parsed from binary data by this package. Only registered images are copied. The
+selected binary model files are copied byte-for-byte to `colmap/sparse/0/`;
+absolute source paths in the copied `project.ini` are normalized so they do not
+refer to the original machine:
+
+```text
+reconstruction/jobs/<job-id>/nerfstudio-data/
+  images/
+  colmap/sparse/0/
+  dataset-manifest.json
+```
+
+Options include `--model-id`, `--output-directory`, `--link-images`,
+`--archive`, `--colmap-binary`, and `--force`. Image links are relative; when
+an archive is requested, links are dereferenced so the tarball contains the
+actual image bytes. Existing datasets and archives are never replaced without
+`--force`.
