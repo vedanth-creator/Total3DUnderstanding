@@ -210,4 +210,5 @@ def handler(event: Dict[str, Any]) -> Dict[str, Any]:
 
 if __name__ == "__main__":
     import runpod
+    print("Starting Total3D RunPod Serverless worker", flush=True)
     runpod.serverless.start({"handler": handler})

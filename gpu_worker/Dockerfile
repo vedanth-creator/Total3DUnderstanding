@@ -5,7 +5,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CXX=/usr/bin/g++-11 \
     CUDAHOSTCXX=/usr/bin/g++-11 \
     NVCC_CCBIN=/usr/bin/gcc-11 \
-    TORCH_CUDA_ARCH_LIST=8.9 \
+    TORCH_CUDA_ARCH_LIST="8.6;8.9" \
     PIP_NO_CACHE_DIR=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -27,4 +27,5 @@ RUN python3 -m pip install -r /tmp/requirements-nerfstudio.txt -r /tmp/requireme
 
 WORKDIR /worker
 COPY gpu_worker /worker/gpu_worker
-CMD ["python3", "-m", "gpu_worker.worker"]
+CMD ["python3", "-u", "-m", "gpu_worker.worker"]
+
