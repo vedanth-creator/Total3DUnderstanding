@@ -28,4 +28,3 @@ RUN python3 -m pip install -r /tmp/requirements-nerfstudio.txt -r /tmp/requireme
 WORKDIR /worker
 COPY gpu_worker /worker/gpu_worker
 CMD ["python3", "-u", "-m", "gpu_worker.worker"]
-
