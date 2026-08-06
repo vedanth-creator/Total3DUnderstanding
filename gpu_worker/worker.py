@@ -1,6 +1,7 @@
 """RunPod-compatible, noninteractive Nerfstudio training worker."""
 
 from dataclasses import dataclass
+from importlib import metadata
 import json
 import os
 from pathlib import Path
@@ -23,6 +24,103 @@ class InvalidDatasetError(WorkerError):
 
 class TrainingError(WorkerError):
     reason = "training_failure"
+
+
+GPU_SMOKE_TEST_ENVIRONMENT_VARIABLE = "RUNPOD_GPU_SMOKE_TEST"
+
+
+def _environment_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def collect_gpu_runtime_diagnostics() -> Dict[str, Any]:
+    """Collect a fixed allow-list of GPU/runtime values without inspecting job input."""
+    import torch
+    from gsplat import csrc
+
+    cuda_available = torch.cuda.is_available()
+    diagnostics: Dict[str, Any] = {
+        "cuda_available": cuda_available,
+        "torch_version": torch.__version__,
+        "torch_cuda_version": torch.version.cuda,
+        "gsplat_version": metadata.version("gsplat"),
+        "gsplat_extension_path": str(Path(csrc.__file__).resolve()),
+    }
+    if cuda_available:
+        diagnostics["device_name"] = torch.cuda.get_device_name(0)
+        diagnostics["device_capability"] = list(torch.cuda.get_device_capability(0))
+    else:
+        diagnostics["device_name"] = None
+        diagnostics["device_capability"] = None
+    return diagnostics
+
+
+def emit_startup_gpu_diagnostics() -> Dict[str, Any]:
+    """Log only safe, explicitly selected runtime diagnostics."""
+    try:
+        diagnostics = collect_gpu_runtime_diagnostics()
+    except Exception as error:
+        diagnostics = {
+            "cuda_available": False,
+            "diagnostics_error_type": type(error).__name__,
+        }
+    print("GPU runtime diagnostics: %s" % json.dumps(diagnostics, sort_keys=True), flush=True)
+    return diagnostics
+
+
+def exercise_gsplat_cuda_extension() -> Dict[str, Any]:
+    """Execute a small native gsplat kernel used by Splatfacto initialization."""
+    import torch
+    from gsplat.cuda._wrapper import quat_scale_to_covar_preci
+
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA is not available to the worker.")
+    quaternions = torch.tensor([[1.0, 0.0, 0.0, 0.0]], device="cuda")
+    scales = torch.tensor([[1.0, 1.0, 1.0]], device="cuda")
+    covariance, precision = quat_scale_to_covar_preci(
+        quaternions,
+        scales,
+        compute_covar=True,
+        compute_preci=True,
+        triu=False,
+    )
+    torch.cuda.synchronize()
+    if covariance is None or precision is None:
+        raise RuntimeError("gsplat did not return covariance and precision tensors.")
+    finite = bool(torch.isfinite(covariance).all().item() and torch.isfinite(precision).all().item())
+    if not finite:
+        raise RuntimeError("gsplat returned non-finite values.")
+    return {
+        "operation": "quat_scale_to_covar_preci",
+        "covariance_shape": list(covariance.shape),
+        "precision_shape": list(precision.shape),
+        "finite": True,
+    }
+
+
+def run_gpu_compatibility_smoke_test() -> Dict[str, Any]:
+    """Return structured compatibility results without running a training job."""
+    diagnostics: Dict[str, Any] = {}
+    try:
+        diagnostics = collect_gpu_runtime_diagnostics()
+        operation = exercise_gsplat_cuda_extension()
+        return {
+            "schema_version": "1.0",
+            "status": "compatible",
+            "mode": "gpu_compatibility_smoke_test",
+            "diagnostics": diagnostics,
+            "gsplat_operation": operation,
+        }
+    except Exception as error:
+        return {
+            "schema_version": "1.0",
+            "status": "incompatible",
+            "mode": "gpu_compatibility_smoke_test",
+            "failure_reason": "gpu_incompatible",
+            "error_type": type(error).__name__,
+            "error": str(error)[:1000],
+            "diagnostics": diagnostics,
+        }
 
 
 @dataclass(frozen=True)
@@ -202,6 +300,11 @@ def execute_training(payload: Dict[str, Any], limits: WorkerLimits = WorkerLimit
 
 
 def handler(event: Dict[str, Any]) -> Dict[str, Any]:
+    # A temporary RunPod endpoint can enable this environment flag to exercise
+    # the native extension without altering the production request schema or
+    # starting dataset download/training.
+    if _environment_flag(GPU_SMOKE_TEST_ENVIRONMENT_VARIABLE):
+        return run_gpu_compatibility_smoke_test()
     payload = event.get("input") if isinstance(event, dict) else None
     if not isinstance(payload, dict):
         return {"schema_version": "1.0", "status": "failed", "failure_reason": "invalid_request", "error": "RunPod input must be an object."}
@@ -211,4 +314,5 @@ def handler(event: Dict[str, Any]) -> Dict[str, Any]:
 if __name__ == "__main__":
     import runpod
     print("Starting Total3D RunPod Serverless worker", flush=True)
+    emit_startup_gpu_diagnostics()
     runpod.serverless.start({"handler": handler})

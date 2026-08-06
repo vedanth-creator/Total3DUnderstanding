@@ -15,6 +15,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CUDAHOSTCXX=/usr/bin/g++-11 \
     NVCC_CCBIN=/usr/bin/gcc-11 \
     TORCH_CUDA_ARCH_LIST="8.6;8.9" \
+    NVCC_FLAGS="-gencode=arch=compute_86,code=sm_86 -gencode=arch=compute_89,code=sm_89" \
     MAX_JOBS=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
@@ -63,13 +64,17 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends libglm-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# gsplat 1.4.0 reads NVCC_FLAGS in setup.py and appends each token directly to
+# its CUDAExtension nvcc arguments. Keep TORCH_CUDA_ARCH_LIST as a secondary
+# signal, but make the two production cubins explicit at the gsplat build layer.
+COPY gpu_worker/verify_gsplat_binary.py /tmp/verify_gsplat_binary.py
 RUN python -m pip uninstall --yes gsplat \
-    && BUILD_NO_CUDA=0 python -m pip install \
+    && BUILD_NO_CUDA=0 python -m pip install --verbose \
       --no-build-isolation \
       --no-binary=gsplat \
       gsplat==1.4.0 \
     && python -m pip check \
-    && python -c "from gsplat import csrc; print(csrc.__file__)" \
+    && python /tmp/verify_gsplat_binary.py --require-architecture sm_86 --require-architecture sm_89 \
     && find "${VIRTUAL_ENV}" -type d -name __pycache__ -prune -exec rm -rf '{}' + \
     && find "${VIRTUAL_ENV}" -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
 

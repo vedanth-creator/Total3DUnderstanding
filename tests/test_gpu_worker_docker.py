@@ -6,6 +6,7 @@ class GPUWorkerDockerTest(unittest.TestCase):
     root = Path(__file__).resolve().parents[1]
     dockerfile = root / "gpu_worker" / "Dockerfile"
     validator = root / "gpu_worker" / "validate_runtime.py"
+    binary_validator = root / "gpu_worker" / "verify_gsplat_binary.py"
 
     def setUp(self):
         self.contents = self.dockerfile.read_text(encoding="utf-8")
@@ -23,6 +24,7 @@ class GPUWorkerDockerTest(unittest.TestCase):
             "torchvision==0.16.2+cu118",
             "gsplat==1.4.0",
             'TORCH_CUDA_ARCH_LIST="8.6;8.9"',
+            'NVCC_FLAGS="-gencode=arch=compute_86,code=sm_86 -gencode=arch=compute_89,code=sm_89"',
             "CC=/usr/bin/gcc-11",
             "CXX=/usr/bin/g++-11",
             "CUDAHOSTCXX=/usr/bin/g++-11",
@@ -32,10 +34,19 @@ class GPUWorkerDockerTest(unittest.TestCase):
 
     def test_gsplat_is_compiled_in_builder_not_at_runtime(self):
         self.assertIn("--no-binary=gsplat", self.contents)
-        self.assertIn('from gsplat import csrc', self.contents)
+        self.assertIn("pip install --verbose", self.contents)
+        self.assertIn('from gsplat import csrc', self.binary_validator.read_text(encoding="utf-8"))
         runtime = self.contents.split(" AS runtime", 1)[1]
         self.assertNotIn("pip install", runtime)
         self.assertIn("gpu_worker.validate_runtime", runtime)
+
+    def test_builder_fails_without_required_gsplat_cubins(self):
+        self.assertIn("python /tmp/verify_gsplat_binary.py", self.contents)
+        self.assertIn("--require-architecture sm_86", self.contents)
+        self.assertIn("--require-architecture sm_89", self.contents)
+        validator = self.binary_validator.read_text(encoding="utf-8")
+        self.assertIn('[cuobjdump, "--list-elf", str(extension)]', validator)
+        self.assertIn("if missing:", validator)
 
     def test_runtime_validation_covers_required_imports_and_commands(self):
         contents = self.validator.read_text(encoding="utf-8")
