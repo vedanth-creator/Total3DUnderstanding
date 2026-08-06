@@ -87,6 +87,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     TORCH_CUDA_ARCH_LIST="8.6;8.9" \
+    TORCH_COMPILE_DISABLE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Shared libraries retained for headless OpenCV/Open3D/PyMeshLab imports,

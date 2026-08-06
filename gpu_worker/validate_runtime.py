@@ -42,6 +42,17 @@ def main() -> int:
         raise RuntimeError("Unexpected RunPod SDK version.")
     if not Path(csrc.__file__).is_file():
         raise RuntimeError("Precompiled gsplat CUDA extension is missing.")
+    if os.environ.get("TORCH_COMPILE_DISABLE") != "1":
+        raise RuntimeError("TorchInductor must be disabled in the compiler-free runtime.")
+
+    # Nerfstudio 1.1.5 decorates Splatfacto's get_viewmat helper with
+    # torch.compile as an optional speed optimization. Exercise the same public
+    # entry point here: with eager fallback enabled it must run without the C/C++
+    # compiler that the production runtime intentionally excludes.
+    eager_function = torch.compile(lambda value: value + 1)
+    eager_result = eager_function(torch.tensor(1))
+    if eager_result.item() != 2:
+        raise RuntimeError("torch.compile eager fallback produced an invalid result.")
 
     require_command(["ns-train", "--help"])
     require_command(["ns-export", "gaussian-splat", "--help"])

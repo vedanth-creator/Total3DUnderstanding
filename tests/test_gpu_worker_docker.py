@@ -61,8 +61,16 @@ class GPUWorkerDockerTest(unittest.TestCase):
             'ctypes.CDLL("libcudart.so.11.0")',
             '"nvcc"',
             '"gcc"',
+            'os.environ.get("TORCH_COMPILE_DISABLE") != "1"',
+            "torch.compile(lambda value: value + 1)",
         ):
             self.assertIn(expected, contents)
+
+    def test_runtime_uses_eager_fallback_without_restoring_a_compiler(self):
+        runtime = self.contents.split(" AS runtime", 1)[1]
+        self.assertIn("TORCH_COMPILE_DISABLE=1", runtime)
+        for package in ("gcc-11", "g++-11", "build-essential", "cmake"):
+            self.assertNotIn("      " + package + " \\\n", runtime)
 
     def test_worker_command_is_exact_and_no_unsupported_override(self):
         self.assertIn('CMD ["python3", "-u", "-m", "gpu_worker.worker"]', self.contents)
