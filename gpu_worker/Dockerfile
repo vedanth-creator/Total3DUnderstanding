@@ -94,6 +94,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libglib2.0-0 \
       libgomp1 \
       libsm6 \
+      libx11-6 \
       libxext6 \
       libxrender1 \
       python3.10 \
