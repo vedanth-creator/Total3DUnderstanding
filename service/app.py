@@ -1,16 +1,19 @@
-"""CPU-only FastAPI application for scene and room-scan milestones.
+"""FastAPI application for scene and room-scan milestones.
 
-The default application intentionally uses static detections and a fake GPU
-response. ``create_app`` accepts factories so those boundaries can later be
-replaced without changing the HTTP contract.
+Scene inference remains CPU-only and uses a fake GPU response. Room-scan
+reconstruction selects the remote training pipeline only when its complete
+environment is configured, while retaining dependency injection for tests.
 """
 
 from contextlib import asynccontextmanager
+import os
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from fastapi import Body, FastAPI, HTTPException
 
+from service.artifact_storage import S3CompatibleArtifactStorage
+from service.gpu_jobs import RunPodGPUJobProvider
 from service.pipeline import (
     DecodedCamera,
     DecodedObject,
@@ -29,7 +32,11 @@ from service.providers import (
     StaticDetectionProvider,
 )
 from service.job_repository import FileJobRepository
-from service.reconstruction import FakeReconstructionProcessor
+from service.reconstruction import (
+    FakeReconstructionProcessor,
+    ReconstructionProcessor,
+)
+from service.remote_reconstruction import RemoteTrainingReconstructionProcessor
 from service.room_scan_routes import SceneFactory, create_room_scan_router
 from service.sample_scene import make_sample_scene
 from service.upload_storage import LocalUploadStorage
@@ -40,6 +47,17 @@ DetectionProviderFactory = Callable[
     [str, Sequence[Detection]], DetectionProvider
 ]
 GPUClientFactory = Callable[[int], GPUClient]
+
+
+REMOTE_TRAINING_ENVIRONMENT_VARIABLES = (
+    "RUNPOD_API_KEY",
+    "RUNPOD_ENDPOINT_ID",
+    "ARTIFACT_S3_BUCKET",
+    "ARTIFACT_S3_ENDPOINT_URL",
+    "ARTIFACT_S3_REGION",
+    "ARTIFACT_S3_ACCESS_KEY_ID",
+    "ARTIFACT_S3_SECRET_ACCESS_KEY",
+)
 
 
 IDENTITY = (
@@ -107,6 +125,13 @@ def _fake_gpu_client_factory(detection_count: int) -> GPUClient:
     )
 
 
+def _remote_training_is_configured() -> bool:
+    return all(
+        os.environ.get(variable_name, "").strip()
+        for variable_name in REMOTE_TRAINING_ENVIRONMENT_VARIABLES
+    )
+
+
 def _required_positive_integer(payload: Dict[str, Any], field_name: str) -> int:
     value = payload.get(field_name)
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
@@ -161,7 +186,7 @@ def create_app(
     maximum_upload_bytes: int = 500 * 1024 * 1024,
     job_repository: Optional[FileJobRepository] = None,
     upload_storage: Optional[LocalUploadStorage] = None,
-    reconstruction_processor: Optional[FakeReconstructionProcessor] = None,
+    reconstruction_processor: Optional[ReconstructionProcessor] = None,
     room_scan_scene_factory: Optional[SceneFactory] = None,
     training_orchestrator: Optional[TrainingOrchestrator] = None,
 ) -> FastAPI:
@@ -178,15 +203,40 @@ def create_app(
         local_storage_root,
         maximum_upload_bytes=maximum_upload_bytes,
     )
-    processor = reconstruction_processor or FakeReconstructionProcessor(repository)
+    effective_training_orchestrator = training_orchestrator
+    if reconstruction_processor is not None:
+        processor: ReconstructionProcessor = reconstruction_processor
+    elif _remote_training_is_configured():
+        if effective_training_orchestrator is None:
+            artifact_storage = S3CompatibleArtifactStorage.from_environment()
+            gpu_job_provider = RunPodGPUJobProvider.from_environment()
+            effective_training_orchestrator = TrainingOrchestrator(
+                repository,
+                artifact_storage,
+                gpu_job_provider,
+                maximum_iterations=int(
+                    os.environ.get("NERFSTUDIO_MAX_ITERATIONS", "30000")
+                ),
+                stale_after_seconds=int(
+                    os.environ.get("GPU_JOB_STALE_SECONDS", "28800")
+                ),
+            )
+        processor = RemoteTrainingReconstructionProcessor(
+            repository=repository,
+            storage_root=local_storage_root,
+            reconstruction_jobs_root=Path("reconstruction/jobs"),
+            training=effective_training_orchestrator,
+        )
+    else:
+        processor = FakeReconstructionProcessor(repository)
     scene_factory = room_scan_scene_factory or make_sample_scene
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         del application
         processor.resume_incomplete()
-        if training_orchestrator is not None:
-            training_orchestrator.reconcile_once()
+        if effective_training_orchestrator is not None:
+            effective_training_orchestrator.reconcile_once()
         yield
         processor.shutdown()
 
@@ -201,9 +251,11 @@ def create_app(
             upload_storage=video_storage,
             processor=processor,
             scene_factory=scene_factory,
-            training_orchestrator=training_orchestrator,
+            training_orchestrator=effective_training_orchestrator,
         )
     )
+    application.state.reconstruction_processor = processor
+    application.state.training_orchestrator = effective_training_orchestrator
 
     @application.get("/health")
     def health() -> Dict[str, str]:

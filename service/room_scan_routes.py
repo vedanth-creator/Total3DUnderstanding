@@ -15,7 +15,7 @@ from service.api_schemas import (
 )
 from service.contracts import SceneResult
 from service.job_repository import FileJobRepository, InvalidJobIDError
-from service.reconstruction import FakeReconstructionProcessor
+from service.reconstruction import ReconstructionProcessor
 from service.upload_storage import (
     LocalUploadStorage,
     UploadTooLargeError,
@@ -95,7 +95,7 @@ def _parse_client_metadata(
 def create_room_scan_router(
     repository: FileJobRepository,
     upload_storage: LocalUploadStorage,
-    processor: FakeReconstructionProcessor,
+    processor: ReconstructionProcessor,
     scene_factory: SceneFactory,
     training_orchestrator: Optional[TrainingOrchestrator] = None,
 ) -> APIRouter:

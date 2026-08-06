@@ -3,10 +3,20 @@
 from concurrent.futures import Future, ThreadPoolExecutor
 import threading
 import time
-from typing import Dict, Tuple
+from typing import Dict, Protocol, Tuple
 
 from service.api_schemas import JobStatus
 from service.job_repository import FileJobRepository
+
+
+class ReconstructionProcessor(Protocol):
+    """Common boundary shared by local and production reconstruction workers."""
+
+    def submit(self, job_id: str) -> None: ...
+
+    def resume_incomplete(self) -> None: ...
+
+    def shutdown(self) -> None: ...
 
 
 class FakeReconstructionProcessor:
