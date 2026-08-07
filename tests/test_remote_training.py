@@ -1,14 +1,17 @@
 import io
 import json
 from pathlib import Path
+import shutil
+import sys
 import tarfile
 import tempfile
+from types import ModuleType, SimpleNamespace
 import unittest
 from unittest import mock
 from uuid import uuid4
 from fastapi.testclient import TestClient
 
-from gpu_worker.worker import InvalidDatasetError, TrainingError, execute_training, safe_extract, validate_dataset
+from gpu_worker.worker import InvalidDatasetError, TrainingError, execute_training, prepare_portable_training_archive, safe_extract, validate_dataset
 from service.api_schemas import ClientScanMetadata
 from service.artifact_storage import ArtifactStorageError, LocalArtifactStorage, S3CompatibleArtifactStorage
 from service.gpu_jobs import GPUJob, GPUJobState, RunPodGPUJobProvider
@@ -57,7 +60,13 @@ class RemoteTrainingTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
+        self.portable_archive_patcher = mock.patch(
+            "gpu_worker.worker.prepare_portable_training_archive",
+            self._fake_prepare_portable_training_archive,
+        )
+        self.portable_archive_patcher.start()
     def tearDown(self):
+        self.portable_archive_patcher.stop()
         self.temp.cleanup()
 
     def test_local_storage_round_trip_and_key_validation(self):
@@ -177,22 +186,43 @@ class RemoteTrainingTest(unittest.TestCase):
         with tarfile.open(destination, "w:gz") as handle:
             handle.add(build, arcname="nerfstudio-data")
 
+    @staticmethod
+    def _fake_prepare_portable_training_archive(run_directory, staging_root):
+        portable_run = staging_root / "training" / "room-scan" / "splatfacto" / "run"
+        shutil.copytree(run_directory, portable_run)
+        return portable_run
+
     def test_worker_success_and_command_failures(self):
         uploads = []
+        uploaded_archive = self.root / "uploaded-training.tar.gz"
         def fake_run(arguments, log, cwd, timeout):
             del log, cwd, timeout
             if arguments[0] == "ns-train":
                 output = Path(arguments[arguments.index("--output-dir") + 1]) / "run"
                 output.mkdir(parents=True)
                 (output / "config.yml").write_text("config")
-                (output / "step.ckpt").write_bytes(b"checkpoint")
+                (output / "nerfstudio_models").mkdir()
+                (output / "nerfstudio_models" / "step.ckpt").write_bytes(b"checkpoint")
             else:
                 export = Path(arguments[arguments.index("--output-dir") + 1])
                 (export / "splat.ply").write_bytes(b"splat")
-        with mock.patch("gpu_worker.worker.download", self._fake_download), mock.patch("gpu_worker.worker.run_command", fake_run), mock.patch("gpu_worker.worker.upload", lambda url, path: uploads.append((url, path.name))):
+        def capture_upload(url, path):
+            uploads.append((url, path.name))
+            if url.endswith("/training_archive"):
+                shutil.copy2(path, uploaded_archive)
+        with mock.patch("gpu_worker.worker.download", self._fake_download), mock.patch("gpu_worker.worker.run_command", fake_run), mock.patch("gpu_worker.worker.upload", capture_upload):
             result = execute_training(self._worker_payload())
         self.assertEqual(result["status"], "completed")
         self.assertEqual(len(uploads), 4)
+        extracted_archive = self.root / "extracted-training"
+        extracted_archive.mkdir()
+        with tarfile.open(uploaded_archive, "r:gz") as handle:
+            handle.extractall(extracted_archive)
+        run = extracted_archive / "training" / "room-scan" / "splatfacto" / "run"
+        self.assertTrue((run / "config.yml").is_file())
+        self.assertTrue(any((run / "nerfstudio_models").glob("*.ckpt")))
+        self.assertTrue((extracted_archive / "export" / "splat.ply").is_file())
+        self.assertTrue((extracted_archive / "dataset" / "transforms.json").is_file())
 
         for failing_command in ("ns-train", "ns-export"):
             def fail(arguments, log, cwd, timeout, target=failing_command):
@@ -204,6 +234,44 @@ class RemoteTrainingTest(unittest.TestCase):
             self.assertEqual(result["status"], "failed")
             self.assertEqual(result["failure_reason"], "training_failure")
 
+    def test_portable_archive_staging_rewrites_viewer_paths(self):
+        run = self.root / "source-run"
+        dataset = self.root / "source-dataset"
+        exports = self.root / "source-export"
+        (run / "nerfstudio_models").mkdir(parents=True)
+        (run / "config.yml").write_text("saved-config")
+        (run / "nerfstudio_models" / "step.ckpt").write_bytes(b"checkpoint")
+        dataset.mkdir()
+        (dataset / "transforms.json").write_text("{}")
+        exports.mkdir()
+        (exports / "splat.ply").write_bytes(b"splat")
+
+        dataparser = SimpleNamespace(data=self.root / "old-data")
+        datamanager = SimpleNamespace(data=self.root / "old-data", dataparser=dataparser)
+        config = SimpleNamespace(
+            output_dir=self.root / "old-output",
+            experiment_name="old-experiment",
+            method_name="splatfacto",
+            timestamp="old-run",
+            data=self.root / "old-data",
+            pipeline=SimpleNamespace(datamanager=datamanager),
+        )
+        fake_yaml = ModuleType("yaml")
+        fake_yaml.Loader = object
+        fake_yaml.load = lambda contents, Loader: config
+        fake_yaml.dump = lambda value: "portable-config"
+        staging = self.root / "staging"
+        with mock.patch.dict(sys.modules, {"yaml": fake_yaml}):
+            portable_run = prepare_portable_training_archive(run, staging)
+
+        self.assertEqual(portable_run, staging / "training" / "room-scan" / "splatfacto" / "run")
+        self.assertEqual(config.output_dir, Path("training"))
+        self.assertEqual(config.data, Path("dataset"))
+        self.assertEqual(config.pipeline.datamanager.data, Path("dataset"))
+        self.assertEqual(config.pipeline.datamanager.dataparser.data, Path("dataset"))
+        self.assertEqual((portable_run / "config.yml").read_text(), "portable-config")
+        self.assertTrue((portable_run / "nerfstudio_models" / "step.ckpt").is_file())
+
     def test_artifact_upload_failure_is_structured(self):
         def successful_commands(arguments, log, cwd, timeout):
             del log, cwd, timeout
@@ -212,7 +280,8 @@ class RemoteTrainingTest(unittest.TestCase):
                 run = output / "run"
                 run.mkdir(parents=True)
                 (run / "config.yml").write_text("config")
-                (run / "step.ckpt").write_bytes(b"checkpoint")
+                (run / "nerfstudio_models").mkdir()
+                (run / "nerfstudio_models" / "step.ckpt").write_bytes(b"checkpoint")
             else:
                 (output / "splat.ply").write_bytes(b"splat")
         with mock.patch("gpu_worker.worker.download", self._fake_download), mock.patch("gpu_worker.worker.run_command", successful_commands), mock.patch("gpu_worker.worker.upload", side_effect=RuntimeError("storage unavailable")):

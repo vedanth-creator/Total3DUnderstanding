@@ -233,6 +233,42 @@ def upload(url: str, source: Path) -> None:
         raise WorkerError("Artifact upload failed.")
 
 
+def prepare_portable_training_archive(
+    run_directory: Path,
+    staging_root: Path,
+) -> Path:
+    """Stage the selected Nerfstudio run and its required viewer inputs."""
+    import yaml
+
+    portable_run = staging_root / "training" / "room-scan" / "splatfacto" / "run"
+    shutil.copytree(run_directory, portable_run)
+
+    config_path = portable_run / "config.yml"
+    config = yaml.load(config_path.read_text(encoding="utf-8"), Loader=yaml.Loader)
+    config.output_dir = Path("training")
+    config.experiment_name = "room-scan"
+    config.method_name = "splatfacto"
+    config.timestamp = "run"
+    config.data = Path("dataset")
+    config.pipeline.datamanager.data = Path("dataset")
+    config.pipeline.datamanager.dataparser.data = Path("dataset")
+    config_path.write_text(yaml.dump(config), encoding="utf-8")
+    return portable_run
+
+
+def create_training_archive(
+    staging_root: Path,
+    dataset: Path,
+    exports: Path,
+    destination: Path,
+) -> None:
+    """Create a stable top-level archive without unrelated worker temporaries."""
+    with tarfile.open(destination, "w:gz") as handle:
+        handle.add(staging_root / "training", arcname="training")
+        handle.add(dataset, arcname="dataset")
+        handle.add(exports, arcname="export")
+
+
 def execute_training(payload: Dict[str, Any], limits: WorkerLimits = WorkerLimits()) -> Dict[str, Any]:
     request = validate_payload(payload)
     started = time.monotonic()
@@ -242,6 +278,7 @@ def execute_training(payload: Dict[str, Any], limits: WorkerLimits = WorkerLimit
         extracted = workspace / "dataset"
         output = workspace / "training"
         exports = workspace / "export"
+        archive_staging = workspace / "archive"
         log_path = workspace / "training.log"
         extracted.mkdir()
         output.mkdir()
@@ -255,17 +292,19 @@ def execute_training(payload: Dict[str, Any], limits: WorkerLimits = WorkerLimit
                     run_command(["ns-train", "splatfacto", "--data", str(dataset), "--max-num-iterations", "1", "--output-dir", str(workspace / "startup"), "--vis", "tensorboard"], log, workspace, limits.maximum_runtime_seconds)
                 run_command(["ns-train", "splatfacto", "--data", str(dataset), "--max-num-iterations", str(request["maximum_iterations"]), "--output-dir", str(output), "--vis", "tensorboard"], log, workspace, limits.maximum_runtime_seconds)
                 configs = sorted(output.rglob("config.yml"), key=lambda path: path.stat().st_mtime, reverse=True)
-                checkpoints = sorted(output.rglob("*.ckpt"))
-                if not configs or not checkpoints:
-                    raise TrainingError("Training did not produce config.yml and a checkpoint.")
+                if not configs:
+                    raise TrainingError("Training did not produce config.yml.")
+                training_run = configs[0].parent
+                checkpoints = sorted((training_run / "nerfstudio_models").glob("*.ckpt"))
+                if not checkpoints:
+                    raise TrainingError("Training did not produce a checkpoint in nerfstudio_models.")
                 run_command(["ns-export", "gaussian-splat", "--load-config", str(configs[0]), "--output-dir", str(exports)], log, workspace, limits.maximum_runtime_seconds)
             splats = list(exports.rglob("splat.ply"))
             if not splats or splats[0].stat().st_size <= 0:
                 raise TrainingError("ns-export did not produce a nonempty splat.ply.")
             training_archive = workspace / "nerfstudio-training.tar.gz"
-            with tarfile.open(training_archive, "w:gz") as handle:
-                handle.add(output, arcname="training")
-                handle.add(exports, arcname="export")
+            prepare_portable_training_archive(training_run, archive_staging)
+            create_training_archive(archive_staging, dataset, exports, training_archive)
             if training_archive.stat().st_size + splats[0].stat().st_size > limits.maximum_output_bytes:
                 raise WorkerError("Training archive exceeds output-size limit.")
             manifest = {
