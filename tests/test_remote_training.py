@@ -11,7 +11,16 @@ from unittest import mock
 from uuid import uuid4
 from fastapi.testclient import TestClient
 
-from gpu_worker.worker import InvalidDatasetError, TrainingError, execute_training, prepare_portable_training_archive, safe_extract, validate_dataset
+from gpu_worker.worker import (
+    INDOOR_ROOM_SPLATFACTO_PRESET,
+    InvalidDatasetError,
+    TrainingError,
+    build_splatfacto_training_command,
+    execute_training,
+    prepare_portable_training_archive,
+    safe_extract,
+    validate_dataset,
+)
 from service.api_schemas import ClientScanMetadata
 from service.artifact_storage import ArtifactStorageError, LocalArtifactStorage, S3CompatibleArtifactStorage
 from service.gpu_jobs import GPUJob, GPUJobState, RunPodGPUJobProvider
@@ -195,6 +204,7 @@ class RemoteTrainingTest(unittest.TestCase):
     def test_worker_success_and_command_failures(self):
         uploads = []
         uploaded_archive = self.root / "uploaded-training.tar.gz"
+        uploaded_log = self.root / "uploaded-training.log"
         def fake_run(arguments, log, cwd, timeout):
             del log, cwd, timeout
             if arguments[0] == "ns-train":
@@ -210,6 +220,8 @@ class RemoteTrainingTest(unittest.TestCase):
             uploads.append((url, path.name))
             if url.endswith("/training_archive"):
                 shutil.copy2(path, uploaded_archive)
+            if url.endswith("/log"):
+                shutil.copy2(path, uploaded_log)
         with mock.patch("gpu_worker.worker.download", self._fake_download), mock.patch("gpu_worker.worker.run_command", fake_run), mock.patch("gpu_worker.worker.upload", capture_upload):
             result = execute_training(self._worker_payload())
         self.assertEqual(result["status"], "completed")
@@ -223,6 +235,10 @@ class RemoteTrainingTest(unittest.TestCase):
         self.assertTrue(any((run / "nerfstudio_models").glob("*.ckpt")))
         self.assertTrue((extracted_archive / "export" / "splat.ply").is_file())
         self.assertTrue((extracted_archive / "dataset" / "transforms.json").is_file())
+        structured_logs = [json.loads(line) for line in uploaded_log.read_text().splitlines()]
+        training_log = next(item for item in structured_logs if item.get("event") == "splatfacto_training_command")
+        self.assertEqual(training_log["preset"], INDOOR_ROOM_SPLATFACTO_PRESET)
+        self.assertIn("--pipeline.model.use-scale-regularization", training_log["command"])
 
         for failing_command in ("ns-train", "ns-export"):
             def fail(arguments, log, cwd, timeout, target=failing_command):
@@ -233,6 +249,24 @@ class RemoteTrainingTest(unittest.TestCase):
                 result = execute_training(self._worker_payload())
             self.assertEqual(result["status"], "failed")
             self.assertEqual(result["failure_reason"], "training_failure")
+
+    def test_indoor_room_splatfacto_preset_uses_pinned_supported_options(self):
+        command = build_splatfacto_training_command(
+            Path("/dataset"),
+            Path("/output"),
+            12_345,
+        )
+        arguments = dict(zip(command[2::2], command[3::2]))
+
+        self.assertEqual(command[:2], ["ns-train", "splatfacto"])
+        self.assertEqual(arguments["--max-num-iterations"], "12345")
+        self.assertEqual(arguments["--pipeline.datamanager.train-cameras-sampling-strategy"], "fps")
+        self.assertEqual(arguments["--pipeline.model.use-scale-regularization"], "True")
+        self.assertEqual(arguments["--pipeline.model.max-gauss-ratio"], "5.0")
+        self.assertEqual(arguments["--pipeline.model.cull-scale-thresh"], "0.15")
+        self.assertEqual(arguments["--pipeline.model.cull-alpha-thresh"], "0.15")
+        self.assertEqual(arguments["--pipeline.model.densify-grad-thresh"], "0.001")
+        self.assertEqual(arguments["--pipeline.model.camera-optimizer.mode"], "off")
 
     def test_portable_archive_staging_rewrites_viewer_paths(self):
         run = self.root / "source-run"

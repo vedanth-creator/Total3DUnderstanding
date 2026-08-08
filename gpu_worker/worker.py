@@ -28,6 +28,20 @@ class TrainingError(WorkerError):
 
 GPU_SMOKE_TEST_ENVIRONMENT_VARIABLE = "RUNPOD_GPU_SMOKE_TEST"
 
+# Nerfstudio 1.1.5 Splatfacto options tuned for sequential indoor room video.
+# Keep this as CLI configuration rather than patching Nerfstudio so the saved
+# config.yml remains the authoritative, portable record of the trained model.
+INDOOR_ROOM_SPLATFACTO_PRESET = "indoor-room-v1"
+INDOOR_ROOM_SPLATFACTO_ARGUMENTS = (
+    "--pipeline.datamanager.train-cameras-sampling-strategy", "fps",
+    "--pipeline.model.use-scale-regularization", "True",
+    "--pipeline.model.max-gauss-ratio", "5.0",
+    "--pipeline.model.cull-scale-thresh", "0.15",
+    "--pipeline.model.cull-alpha-thresh", "0.15",
+    "--pipeline.model.densify-grad-thresh", "0.001",
+    "--pipeline.model.camera-optimizer.mode", "off",
+)
+
 
 def _environment_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
@@ -207,6 +221,33 @@ def run_command(arguments: Sequence[str], log, cwd: Path, timeout: int) -> None:
         raise TrainingError("Command failed with exit code %d: %s" % (completed.returncode, arguments[0]))
 
 
+def build_splatfacto_training_command(
+    dataset: Path,
+    output_directory: Path,
+    maximum_iterations: int,
+) -> List[str]:
+    """Build the pinned indoor-room training command without changing its API."""
+    return [
+        "ns-train",
+        "splatfacto",
+        "--data", str(dataset),
+        "--max-num-iterations", str(maximum_iterations),
+        "--output-dir", str(output_directory),
+        "--vis", "tensorboard",
+        *INDOOR_ROOM_SPLATFACTO_ARGUMENTS,
+    ]
+
+
+def log_splatfacto_training_command(log, command: Sequence[str]) -> None:
+    """Write a machine-readable record of the exact production preset."""
+    log.write(json.dumps({
+        "event": "splatfacto_training_command",
+        "preset": INDOOR_ROOM_SPLATFACTO_PRESET,
+        "command": list(command),
+    }, sort_keys=True) + "\n")
+    log.flush()
+
+
 def download(url: str, destination: Path, maximum_bytes: int) -> None:
     request = Request(url, method="GET")
     with urlopen(request, timeout=120) as response, destination.open("wb") as output:
@@ -289,8 +330,16 @@ def execute_training(payload: Dict[str, Any], limits: WorkerLimits = WorkerLimit
             dataset = validate_dataset(extracted)
             with log_path.open("w", encoding="utf-8") as log:
                 if request.get("startup_test", False):
-                    run_command(["ns-train", "splatfacto", "--data", str(dataset), "--max-num-iterations", "1", "--output-dir", str(workspace / "startup"), "--vis", "tensorboard"], log, workspace, limits.maximum_runtime_seconds)
-                run_command(["ns-train", "splatfacto", "--data", str(dataset), "--max-num-iterations", str(request["maximum_iterations"]), "--output-dir", str(output), "--vis", "tensorboard"], log, workspace, limits.maximum_runtime_seconds)
+                    startup_command = build_splatfacto_training_command(dataset, workspace / "startup", 1)
+                    log_splatfacto_training_command(log, startup_command)
+                    run_command(startup_command, log, workspace, limits.maximum_runtime_seconds)
+                training_command = build_splatfacto_training_command(
+                    dataset,
+                    output,
+                    request["maximum_iterations"],
+                )
+                log_splatfacto_training_command(log, training_command)
+                run_command(training_command, log, workspace, limits.maximum_runtime_seconds)
                 configs = sorted(output.rglob("config.yml"), key=lambda path: path.stat().st_mtime, reverse=True)
                 if not configs:
                     raise TrainingError("Training did not produce config.yml.")

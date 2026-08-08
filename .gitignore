@@ -9,3 +9,5 @@ models/
 *.ckpt
 *.ply
 *.tar.gz
+
+.env.training
