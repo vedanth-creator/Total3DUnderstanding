@@ -4,8 +4,8 @@ import RealityKit
 @MainActor
 final class RoomPlanSceneCoordinator {
     let anchor = AnchorEntity(world: .zero)
+    let sceneRoot = Entity()
 
-    private let sceneRoot = Entity()
     private let surfaceRoot = Entity()
     private let objectRoot = Entity()
     private var records: [UUID: RoomPlanObjectEntityRecord] = [:]
@@ -21,18 +21,19 @@ final class RoomPlanSceneCoordinator {
         sceneRoot.addChild(objectRoot)
     }
 
-    func synchronize(project: RoomPlanProject, selectedObjectID: UUID?, angled: Bool) {
+    func synchronize(project: RoomPlanProject, selectedObjectID: UUID?) {
         if configuredProjectID != project.id {
             rebuildSurfaces(project.surfaces)
             configuredProjectID = project.id
         }
 
-        let currentIDs = Set(project.objects.map(\.id))
+        let visibleObjects = project.objects.filter { !$0.isRemoved }
+        let currentIDs = Set(visibleObjects.map(\.id))
         for staleID in Array(records.keys) where !currentIDs.contains(staleID) {
             records[staleID]?.entity.removeFromParent()
             records.removeValue(forKey: staleID)
         }
-        for object in project.objects {
+        for object in visibleObjects {
             let record: RoomPlanObjectEntityRecord
             if let existing = records[object.id] {
                 record = existing
@@ -44,11 +45,27 @@ final class RoomPlanSceneCoordinator {
             }
             record.highlight.isEnabled = object.id == selectedObjectID
         }
-        applyDollhouseTransform(bounds: project.floorBounds, angled: angled)
     }
 
     func objectID(from entity: Entity?) -> UUID? {
         RoomPlanEntityFactory.objectID(from: entity)
+    }
+
+    func roomPoint(
+        for screenPoint: CGPoint,
+        in view: ARView,
+        horizontalPlaneY: Float
+    ) -> SIMD3<Float>? {
+        guard let ray = view.ray(through: screenPoint) else { return nil }
+        let roomFromView = sceneRoot.transformMatrix(relativeTo: nil).inverse
+        let origin4 = roomFromView * SIMD4<Float>(ray.origin.x, ray.origin.y, ray.origin.z, 1)
+        let direction4 = roomFromView * SIMD4<Float>(ray.direction.x, ray.direction.y, ray.direction.z, 0)
+        let origin = SIMD3<Float>(origin4.x, origin4.y, origin4.z)
+        let direction = simd_normalize(SIMD3<Float>(direction4.x, direction4.y, direction4.z))
+        guard abs(direction.y) > 0.0001 else { return nil }
+        let distance = (horizontalPlaneY - origin.y) / direction.y
+        guard distance > 0 else { return nil }
+        return origin + direction * distance
     }
 
     private func rebuildSurfaces(_ surfaces: [RoomPlanSurfaceModel]) {
@@ -58,26 +75,4 @@ final class RoomPlanSceneCoordinator {
         }
     }
 
-    private func applyDollhouseTransform(bounds: RoomPlanFloorBounds, angled: Bool) {
-        // RoomPlan and the editor both use meters with X left/right, Y up, and
-        // Z forward/back. ARView's non-AR camera looks down -Z, so the shared
-        // scene root is rotated for presentation only; object data stays in
-        // the original RoomPlan coordinate system.
-        let span = max(max(bounds.width, bounds.depth), 2)
-        let distance = span * (angled ? 1.35 : 1.15)
-        let center = bounds.center
-        let centerTranslation = simd_float4x4(translation: SIMD3<Float>(-center.x, 0, -center.z))
-        let pitch = simd_float4x4(
-            simd_quatf(angle: angled ? -.pi / 3.2 : -.pi / 2, axis: SIMD3<Float>(1, 0, 0))
-        )
-        let viewTranslation = simd_float4x4(translation: SIMD3<Float>(0, angled ? -span * 0.08 : 0, -distance))
-        sceneRoot.transform = Transform(matrix: viewTranslation * pitch * centerTranslation)
-    }
-}
-
-private extension simd_float4x4 {
-    init(translation: SIMD3<Float>) {
-        self = matrix_identity_float4x4
-        columns.3 = SIMD4<Float>(translation.x, translation.y, translation.z, 1)
-    }
 }

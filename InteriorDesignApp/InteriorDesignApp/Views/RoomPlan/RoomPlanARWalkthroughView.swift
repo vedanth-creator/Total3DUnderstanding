@@ -14,9 +14,9 @@ struct RoomPlanARWalkthroughView: View {
             HStack(spacing: 12) {
                 CircleIconButton(systemImage: "chevron.left", action: onBack)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("AR walkthrough")
+                    Text("View Changes in AR")
                         .font(.headline)
-                    Text(viewModel.worldMap == nil ? "Coordinate map unavailable" : "Move slowly to relocalize")
+                    Text(statusMessage)
                         .font(.caption)
                         .foregroundStyle(AppTheme.secondaryInk)
                 }
@@ -27,6 +27,12 @@ struct RoomPlanARWalkthroughView: View {
         }
         .onAppear { AppDebugLog.write("RoomPlan AR walkthrough appeared") }
         .onDisappear { AppDebugLog.write("RoomPlan AR walkthrough disappeared") }
+    }
+
+    private var statusMessage: String {
+        if viewModel.worldMap == nil { return "Coordinate map unavailable" }
+        if viewModel.arChangeCount == 0 { return "No layout changes to preview" }
+        return "\(viewModel.arChangeCount) change\(viewModel.arChangeCount == 1 ? "" : "s") · move slowly to relocalize"
     }
 }
 
@@ -45,8 +51,7 @@ private struct RoomPlanARView: UIViewRepresentable {
         )
         view.scene.addAnchor(context.coordinator.sceneCoordinator.anchor)
         context.coordinator.sceneCoordinator.synchronize(
-            project: viewModel.project,
-            selectedObjectID: viewModel.selectedObjectID
+            project: viewModel.project
         )
 
         let configuration = ARWorldTrackingConfiguration()
@@ -62,8 +67,7 @@ private struct RoomPlanARView: UIViewRepresentable {
 
     func updateUIView(_ view: ARView, context: Context) {
         context.coordinator.sceneCoordinator.synchronize(
-            project: viewModel.project,
-            selectedObjectID: viewModel.selectedObjectID
+            project: viewModel.project
         )
     }
 

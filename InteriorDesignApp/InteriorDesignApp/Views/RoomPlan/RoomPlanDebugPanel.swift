@@ -13,7 +13,9 @@ struct RoomPlanDebugPanel: View {
                     value("Doors", viewModel.project.doors.count)
                     value("Windows", viewModel.project.windows.count)
                     value("Openings", viewModel.project.openings.count)
-                    value("Objects", viewModel.project.objects.count)
+                    value("Captured objects", viewModel.project.originalObjects.count)
+                    value("Active objects", viewModel.project.objects.filter { !$0.isRemoved }.count)
+                    value("AR changes", viewModel.arChangeCount)
                     value(
                         "Dimensions",
                         String(
@@ -28,6 +30,7 @@ struct RoomPlanDebugPanel: View {
                 if let object = viewModel.selectedObject {
                     Section("Selected object") {
                         value("Category", object.category)
+                        value("Source", object.source.rawValue.capitalized)
                         value(
                             "Dimensions",
                             String(
