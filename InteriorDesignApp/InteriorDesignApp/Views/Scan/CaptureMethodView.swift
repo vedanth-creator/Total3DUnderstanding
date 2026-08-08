@@ -4,10 +4,13 @@ import SwiftUI
 struct CaptureMethodView: View {
     @ObservedObject var viewModel: CaptureMethodViewModel
     let onBack: () -> Void
+    let onRoomPlanScan: () -> Void
     let onRecordScan: () -> Void
     let onUsePhotos: () -> Void
     let onUseSample: () -> Void
     let onVideoSelected: (RoomScanVideo) -> Void
+    let hasSavedRoomPlanProject: Bool
+    let onOpenSavedRoomPlanProject: () -> Void
 
     @State private var isVideoPickerPresented = false
     @State private var videoPickerItem: PhotosPickerItem?
@@ -29,10 +32,16 @@ struct CaptureMethodView: View {
 
                     VStack(spacing: 14) {
                         captureOption(
+                            title: "Scan with RoomPlan",
+                            subtitle: "Experimental LiDAR editor",
+                            systemImage: "viewfinder.rectangular",
+                            isPrimary: true,
+                            action: onRoomPlanScan
+                        )
+                        captureOption(
                             title: "Record room scan",
                             subtitle: "Recommended",
                             systemImage: "video.fill",
-                            isPrimary: true,
                             action: onRecordScan
                         )
                         captureOption(
@@ -54,6 +63,14 @@ struct CaptureMethodView: View {
                             systemImage: "cube.transparent",
                             action: onUseSample
                         )
+                        if hasSavedRoomPlanProject {
+                            captureOption(
+                                title: "Open recent RoomPlan room",
+                                subtitle: "Continue editing locally",
+                                systemImage: "clock.arrow.circlepath",
+                                action: onOpenSavedRoomPlanProject
+                            )
+                        }
                     }
                 }
                 .padding(.horizontal, 22)

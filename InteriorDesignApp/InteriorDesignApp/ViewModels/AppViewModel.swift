@@ -8,6 +8,9 @@ enum AppRoute: Equatable {
     case upload
     case processing
     case viewer
+    case roomPlanCapture
+    case roomPlanEditor
+    case roomPlanAR
 }
 
 @MainActor
@@ -17,6 +20,9 @@ final class AppViewModel: ObservableObject {
     @Published var viewerViewModel: RoomViewerViewModel?
     @Published var videoCaptureViewModel: RoomVideoCaptureViewModel?
     @Published var videoReviewViewModel: VideoReviewViewModel?
+    @Published var roomPlanCaptureViewModel: RoomPlanCaptureViewModel?
+    @Published var editableRoomPlanViewModel: EditableRoomPlanViewModel?
+    @Published private(set) var hasSavedRoomPlanProject = false
 
     let homeViewModel = HomeViewModel()
     let uploadViewModel = UploadViewModel()
@@ -24,6 +30,7 @@ final class AppViewModel: ObservableObject {
 
     private let designService: RoomDesignProviding
     private let roomScanService: RoomScanSubmitting
+    private let roomPlanPersistence: RoomPlanProjectPersisting
 
     init(
         designService: RoomDesignProviding,
@@ -31,6 +38,8 @@ final class AppViewModel: ObservableObject {
     ) {
         self.designService = designService
         self.roomScanService = roomScanService
+        self.roomPlanPersistence = RoomPlanPersistenceService()
+        self.hasSavedRoomPlanProject = (try? roomPlanPersistence.loadMostRecent()) != nil
         AppDebugLog.write("AppViewModel initialized")
     }
 
@@ -50,6 +59,41 @@ final class AppViewModel: ObservableObject {
         videoCaptureViewModel?.stopSession()
         videoCaptureViewModel = RoomVideoCaptureViewModel()
         route = .videoCapture
+    }
+
+    func showRoomPlanCapture() {
+        roomPlanCaptureViewModel = RoomPlanCaptureViewModel { [weak self] project in
+            self?.showRoomPlanEditor(project)
+        }
+        route = .roomPlanCapture
+    }
+
+    func showRoomPlanEditor(_ project: RoomPlanProject) {
+        editableRoomPlanViewModel = EditableRoomPlanViewModel(
+            project: project,
+            persistence: roomPlanPersistence
+        )
+        hasSavedRoomPlanProject = true
+        route = .roomPlanEditor
+    }
+
+    func openSavedRoomPlanProject() {
+        do {
+            guard let project = try roomPlanPersistence.loadMostRecent() else { return }
+            showRoomPlanEditor(project)
+        } catch {
+            AppDebugLog.write("Could not load saved RoomPlan project: \(error.localizedDescription)")
+        }
+    }
+
+    func showRoomPlanAR() {
+        guard editableRoomPlanViewModel != nil else { return }
+        route = .roomPlanAR
+    }
+
+    func returnToRoomPlanEditor() {
+        guard editableRoomPlanViewModel != nil else { return }
+        route = .roomPlanEditor
     }
 
     func showVideoReview(_ video: RoomScanVideo) {

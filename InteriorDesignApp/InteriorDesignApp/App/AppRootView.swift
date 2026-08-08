@@ -21,12 +21,43 @@ struct AppRootView: View {
                 CaptureMethodView(
                     viewModel: viewModel.captureMethodViewModel,
                     onBack: viewModel.showHome,
+                    onRoomPlanScan: viewModel.showRoomPlanCapture,
                     onRecordScan: viewModel.showVideoCapture,
                     onUsePhotos: viewModel.showUpload,
                     onUseSample: viewModel.openDefaultSampleScene,
-                    onVideoSelected: viewModel.showVideoReview
+                    onVideoSelected: viewModel.showVideoReview,
+                    hasSavedRoomPlanProject: viewModel.hasSavedRoomPlanProject,
+                    onOpenSavedRoomPlanProject: viewModel.openSavedRoomPlanProject
                 )
                 .transition(.appScreen)
+
+            case .roomPlanCapture:
+                if let roomPlanCaptureViewModel = viewModel.roomPlanCaptureViewModel {
+                    RoomPlanCaptureView(
+                        viewModel: roomPlanCaptureViewModel,
+                        onCancel: viewModel.showCaptureMethods
+                    )
+                    .transition(.appScreen)
+                }
+
+            case .roomPlanEditor:
+                if let editableRoomPlanViewModel = viewModel.editableRoomPlanViewModel {
+                    RoomPlanEditorView(
+                        viewModel: editableRoomPlanViewModel,
+                        onBack: viewModel.showCaptureMethods,
+                        onViewInAR: viewModel.showRoomPlanAR
+                    )
+                    .transition(.appScreen)
+                }
+
+            case .roomPlanAR:
+                if let editableRoomPlanViewModel = viewModel.editableRoomPlanViewModel {
+                    RoomPlanARWalkthroughView(
+                        viewModel: editableRoomPlanViewModel,
+                        onBack: viewModel.returnToRoomPlanEditor
+                    )
+                    .transition(.appScreen)
+                }
 
             case .videoCapture:
                 if let videoCaptureViewModel = viewModel.videoCaptureViewModel {
