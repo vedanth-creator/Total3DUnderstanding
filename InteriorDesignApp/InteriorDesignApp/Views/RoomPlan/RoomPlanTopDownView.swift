@@ -15,7 +15,7 @@ struct RoomPlanTopDownView: UIViewRepresentable {
             automaticallyConfigureSession: false
         )
         view.environment.background = .color(
-            UIColor(red: 0.93, green: 0.92, blue: 0.89, alpha: 1)
+            UIColor(red: 0.95, green: 0.945, blue: 0.925, alpha: 1)
         )
         view.renderOptions.insert(.disableMotionBlur)
         view.scene.addAnchor(context.coordinator.sceneCoordinator.anchor)

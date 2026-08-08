@@ -48,7 +48,11 @@ final class RoomPlanCaptureViewController: UIViewController, @preconcurrency Roo
     override func viewDidLoad() {
         super.viewDidLoad()
         captureView.delegate = self
-        captureView.isModelEnabled = true
+        // RoomPlan owns the live model's geometry and materials, including its
+        // provisional window/opening cutouts. Apple exposes no styling hooks
+        // for that model, so keep the reliable camera/coaching UI and hide the
+        // unstable live dollhouse. This does not disable scene capture.
+        captureView.isModelEnabled = false
         captureView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(captureView)
         NSLayoutConstraint.activate([

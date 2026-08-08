@@ -8,6 +8,7 @@ final class RoomPlanSceneCoordinator {
 
     private let surfaceRoot = Entity()
     private let objectRoot = Entity()
+    private let lightingRoot = Entity()
     private var records: [UUID: RoomPlanObjectEntityRecord] = [:]
     private var configuredProjectID: UUID?
 
@@ -16,14 +17,17 @@ final class RoomPlanSceneCoordinator {
         sceneRoot.name = "roomplan-editor-root"
         surfaceRoot.name = "roomplan-surfaces"
         objectRoot.name = "roomplan-objects"
+        lightingRoot.name = "roomplan-lighting-root"
         anchor.addChild(sceneRoot)
+        anchor.addChild(lightingRoot)
         sceneRoot.addChild(surfaceRoot)
         sceneRoot.addChild(objectRoot)
     }
 
     func synchronize(project: RoomPlanProject, selectedObjectID: UUID?) {
         if configuredProjectID != project.id {
-            rebuildSurfaces(project.surfaces)
+            rebuildSurfaces(project)
+            rebuildLighting(roomHeight: project.roomHeight)
             configuredProjectID = project.id
         }
 
@@ -68,11 +72,18 @@ final class RoomPlanSceneCoordinator {
         return origin + direction * distance
     }
 
-    private func rebuildSurfaces(_ surfaces: [RoomPlanSurfaceModel]) {
+    private func rebuildSurfaces(_ project: RoomPlanProject) {
         surfaceRoot.children.removeAll()
-        for surface in surfaces {
-            surfaceRoot.addChild(RoomPlanEntityFactory.makeSurface(surface))
+        for surface in RoomPlanEntityFactory.makeArchitecturalSurfaces(for: project) {
+            surfaceRoot.addChild(surface)
         }
+    }
+
+    private func rebuildLighting(roomHeight: Float) {
+        lightingRoot.children.removeAll()
+        lightingRoot.addChild(
+            RoomPlanLightingController.makeEditorLighting(roomHeight: roomHeight)
+        )
     }
 
 }
