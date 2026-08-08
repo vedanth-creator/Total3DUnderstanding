@@ -32,6 +32,9 @@ final class RoomPlanSceneCoordinator {
         }
 
         let visibleObjects = project.objects.filter { !$0.isRemoved }
+        let wallsByID = Dictionary(
+            uniqueKeysWithValues: project.walls.map { ($0.id, $0) }
+        )
         let currentIDs = Set(visibleObjects.map(\.id))
         for staleID in Array(records.keys) where !currentIDs.contains(staleID) {
             records[staleID]?.entity.removeFromParent()
@@ -43,7 +46,11 @@ final class RoomPlanSceneCoordinator {
                 record = existing
                 RoomPlanEntityFactory.update(existing, from: object)
             } else {
-                record = RoomPlanEntityFactory.makeObject(object)
+                record = RoomPlanEntityFactory.makeObject(
+                    object,
+                    parentWall: object.parentIdentifier.flatMap { wallsByID[$0] },
+                    roomCenter: project.floorBounds.center
+                )
                 records[object.id] = record
                 objectRoot.addChild(record.entity)
             }

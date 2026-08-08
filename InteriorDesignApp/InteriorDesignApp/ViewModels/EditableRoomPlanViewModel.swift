@@ -123,16 +123,14 @@ final class EditableRoomPlanViewModel: ObservableObject {
     func add(_ category: RoomPlanAddCategory) {
         let before = snapshot
         let dimensions = category.defaultDimensions
-        let center = project.floorBounds.center
-        var matrix = matrix_identity_float4x4
-        matrix.columns.3 = SIMD4<Float>(center.x, dimensions.height / 2, center.z, 1)
+        let placement = initialPlacement(for: category, dimensions: dimensions)
         let object = EditableRoomPlanObject(
             id: UUID(),
             category: category.rawValue,
             dimensions: dimensions,
-            transform: RoomPlanTransform(matrix),
+            transform: RoomPlanTransform(placement.transform),
             confidence: "Added",
-            parentIdentifier: nil,
+            parentIdentifier: placement.parentWallID,
             source: .added
         )
         project.objects.append(object)
@@ -202,6 +200,52 @@ final class EditableRoomPlanViewModel: ObservableObject {
     private func snapToGrid(_ value: Float) -> Float {
         let gridSize: Float = 0.05
         return (value / gridSize).rounded() * gridSize
+    }
+
+    private func initialPlacement(
+        for category: RoomPlanAddCategory,
+        dimensions: RoomPlanDimensions
+    ) -> (transform: simd_float4x4, parentWallID: UUID?) {
+        guard category == .wallArt, let wall = project.walls.max(by: {
+            $0.dimensions.width < $1.dimensions.width
+        }) else {
+            let center = project.floorBounds.center
+            var transform = matrix_identity_float4x4
+            transform.columns.3 = SIMD4<Float>(
+                center.x,
+                category == .wallArt ? max(project.roomHeight * 0.55, 1.2) : dimensions.height / 2,
+                center.z,
+                1
+            )
+            return (transform, nil)
+        }
+
+        // RoomPlan walls are local XY planes with local Z as the normal. Copy
+        // the wall rotation so width and height remain in the wall plane, then
+        // place the decor just beyond the interior wall face.
+        var transform = wall.transform.matrix
+        let wallPosition = wall.transform.position
+        let candidateNormal = SIMD3<Float>(
+            transform.columns.2.x,
+            transform.columns.2.y,
+            transform.columns.2.z
+        )
+        let normalLength = simd_length(candidateNormal)
+        let normal = normalLength > 0.0001
+            ? candidateNormal / normalLength
+            : SIMD3<Float>(0, 0, 1)
+        let towardRoom = project.floorBounds.center - wallPosition
+        let inwardNormal = simd_dot(normal, towardRoom) >= 0 ? normal : -normal
+        let offset = RoomPlanWallDecorGeometry.wallThickness / 2
+            + RoomPlanWallDecorGeometry.depth / 2
+            + RoomPlanWallDecorGeometry.wallSurfaceGap
+        transform.columns.3 += SIMD4<Float>(
+            inwardNormal.x * offset,
+            inwardNormal.y * offset,
+            inwardNormal.z * offset,
+            0
+        )
+        return (transform, wall.id)
     }
 
     private func snapToNearbyWall(_ value: Float, minimum: Float, maximum: Float) -> Float {

@@ -70,9 +70,7 @@ final class FurnitureAssetLibrary {
     func makeVisual(category: String, dimensions: SIMD3<Float>) -> Entity {
         let key = category.lowercased()
         if let descriptor = descriptors[key], let loaded = loadAsset(descriptor) {
-            configure(loaded, descriptor: descriptor, dimensions: dimensions)
-            loaded.name = "furniture-asset:\(descriptor.category)"
-            return loaded
+            return configure(loaded, descriptor: descriptor, dimensions: dimensions)
         }
 
         let fallback = makeProceduralVisual(category: category, dimensions: dimensions)
@@ -116,15 +114,47 @@ final class FurnitureAssetLibrary {
         _ entity: Entity,
         descriptor: FurnitureAssetDescriptor,
         dimensions: SIMD3<Float>
-    ) {
+    ) -> Entity {
+        let visualRoot = Entity()
+        visualRoot.name = "furniture-asset:\(descriptor.category)"
+
         let fittedScale = descriptor.fittedScale(for: dimensions)
         entity.scale = fittedScale
         entity.orientation = descriptor.rotationCorrection
-        entity.position = descriptor.pivotOffset * fittedScale
+        entity.position = .zero
         stripCollisionComponents(from: entity)
         if let style = descriptor.materialOverride {
             applyMaterialOverride(style, to: entity)
         }
+        visualRoot.addChild(entity)
+
+        // USDZ authors may place an asset's origin at its center, its base, or
+        // an arbitrary point. Measure the fully scaled and rotation-corrected
+        // visual in the RoomPlan object's local coordinate space, then ground
+        // it inside the authoritative RoomPlan interaction box. The optional
+        // descriptor offset remains an additive post-grounding correction.
+        let bounds = entity.visualBounds(recursive: true, relativeTo: visualRoot)
+        let scaledPivotOffset = descriptor.pivotOffset * fittedScale
+        if !bounds.isEmpty {
+            let targetBottom = -dimensions.y / 2
+            let groundingOffset = targetBottom - bounds.min.y
+            entity.position = SIMD3<Float>(
+                scaledPivotOffset.x,
+                groundingOffset + scaledPivotOffset.y,
+                scaledPivotOffset.z
+            )
+            AppDebugLog.write(
+                "Furniture asset grounded; category=\(descriptor.category) "
+                    + "scaledBoundsMinY=\(bounds.min.y) targetBottomY=\(targetBottom) "
+                    + "automaticYOffset=\(groundingOffset) manualYOffset=\(scaledPivotOffset.y)"
+            )
+        } else {
+            entity.position = scaledPivotOffset
+            AppDebugLog.write(
+                "Furniture asset has empty visual bounds; category=\(descriptor.category) using descriptor pivot offset only"
+            )
+        }
+        return visualRoot
     }
 
     private func stripCollisionComponents(from entity: Entity) {
@@ -158,7 +188,8 @@ final class FurnitureAssetLibrary {
         )
         let root = Entity()
 
-        switch category.lowercased() {
+        let normalizedCategory = category.lowercased()
+        switch normalizedCategory {
         case "chair":
             makeChair(in: root, d: d)
         case "sofa":
@@ -175,8 +206,8 @@ final class FurnitureAssetLibrary {
             makeLamp(in: root, d: d)
         case "plant":
             makePlant(in: root, d: d)
-        case "wall art":
-            makeWallArt(in: root, d: d)
+        case "wall art", "painting", "picture", "framed photo", "mirror", "wall decor":
+            makeWallDecor(in: root, d: d, isMirror: normalizedCategory == "mirror")
         default:
             addBox(
                 to: root,
@@ -407,7 +438,7 @@ final class FurnitureAssetLibrary {
         }
     }
 
-    private func makeWallArt(in root: Entity, d: SIMD3<Float>) {
+    private func makeWallDecor(in root: Entity, d: SIMD3<Float>, isMirror: Bool) {
         addBox(
             to: root,
             size: d,
@@ -417,14 +448,18 @@ final class FurnitureAssetLibrary {
             to: root,
             size: SIMD3<Float>(d.x * 0.88, d.y * 0.82, d.z * 1.06),
             position: SIMD3<Float>(0, 0, d.z * 0.04),
-            material: RoomPlanMaterialLibrary.artwork
+            material: isMirror
+                ? RoomPlanMaterialLibrary.stableGlass
+                : RoomPlanMaterialLibrary.artwork
         )
-        addBox(
-            to: root,
-            size: SIMD3<Float>(d.x * 0.55, d.y * 0.06, d.z * 1.08),
-            position: SIMD3<Float>(-d.x * 0.10, d.y * 0.12, d.z * 0.06),
-            material: RoomPlanMaterialLibrary.lampshade
-        )
+        if !isMirror {
+            addBox(
+                to: root,
+                size: SIMD3<Float>(d.x * 0.55, d.y * 0.06, d.z * 1.08),
+                position: SIMD3<Float>(-d.x * 0.10, d.y * 0.12, d.z * 0.06),
+                material: RoomPlanMaterialLibrary.lampshade
+            )
+        }
     }
 
     private func addFourLegs(

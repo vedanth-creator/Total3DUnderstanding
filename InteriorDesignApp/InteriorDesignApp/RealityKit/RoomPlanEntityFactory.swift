@@ -4,7 +4,7 @@ import UIKit
 @MainActor
 enum RoomPlanEntityFactory {
     static let objectPrefix = "roomplan-object:"
-    private static let wallThickness: Float = 0.04
+    private static let wallThickness = RoomPlanWallDecorGeometry.wallThickness
     private static let floorThickness: Float = 0.025
     private static let insetThickness: Float = 0.012
     private static let insetFaceGap: Float = 0.002
@@ -16,11 +16,20 @@ enum RoomPlanEntityFactory {
     ) -> Entity {
         let root = Entity()
         root.name = "roomplan-scene"
+        let wallsByID = Dictionary(
+            uniqueKeysWithValues: project.walls.map { ($0.id, $0) }
+        )
         for surface in makeArchitecturalSurfaces(for: project, includeFloor: includeFloor) {
             root.addChild(surface)
         }
         for object in project.objects where !object.isRemoved {
-            root.addChild(makeObject(object).entity)
+            root.addChild(
+                makeObject(
+                    object,
+                    parentWall: object.parentIdentifier.flatMap { wallsByID[$0] },
+                    roomCenter: project.floorBounds.center
+                ).entity
+            )
         }
         return root
     }
@@ -129,36 +138,104 @@ enum RoomPlanEntityFactory {
         return entity
     }
 
-    static func makeObject(_ object: EditableRoomPlanObject) -> RoomPlanObjectEntityRecord {
-        let dimensions = object.dimensions.vector
+    static func makeObject(
+        _ object: EditableRoomPlanObject,
+        parentWall: RoomPlanSurfaceModel? = nil,
+        roomCenter: SIMD3<Float>? = nil
+    ) -> RoomPlanObjectEntityRecord {
+        let dimensions = object.editorDimensions
+        let alignment = wallDecorAlignment(
+            object: object,
+            parentWall: parentWall,
+            roomCenter: roomCenter
+        )
         let entity = Entity()
         entity.name = objectPrefix + object.id.uuidString
         entity.transform = Transform(matrix: object.transform.matrix)
-        entity.components.set(
-            CollisionComponent(shapes: [.generateBox(size: dimensions)])
-        )
+
+        if object.semantic.isWallMountedDecor {
+            let interaction = Entity()
+            interaction.name = "roomplan-wall-decor-interaction:\(object.id.uuidString)"
+            interaction.position = alignment.position
+            interaction.orientation = alignment.orientation
+            interaction.components.set(
+                CollisionComponent(shapes: [.generateBox(size: dimensions)])
+            )
+            entity.addChild(interaction)
+        } else {
+            entity.components.set(
+                CollisionComponent(shapes: [.generateBox(size: dimensions)])
+            )
+        }
 
         let visual = FurnitureAssetLibrary.shared.makeVisual(
             category: object.category,
             dimensions: dimensions
         )
+        visual.position = alignment.position
+        visual.orientation = alignment.orientation
         entity.addChild(visual)
 
         var highlightMaterial = UnlitMaterial()
         highlightMaterial.color = .init(tint: UIColor(red: 1, green: 0.72, blue: 0.05, alpha: 0.32))
+        let highlightPadding = object.semantic.isWallMountedDecor
+            ? SIMD3<Float>(0.08, 0.08, 0.015)
+            : SIMD3<Float>(repeating: 0.08)
         let highlight = ModelEntity(
             mesh: .generateBox(
-                size: dimensions + SIMD3<Float>(repeating: 0.08),
+                size: dimensions + highlightPadding,
                 cornerRadius: min(dimensions.x, dimensions.z) * 0.05
             ),
             materials: [highlightMaterial]
         )
         highlight.name = "roomplan-selection:\(object.id.uuidString)"
+        highlight.position = alignment.position
+        highlight.orientation = alignment.orientation
         highlight.components.remove(CollisionComponent.self)
         highlight.isEnabled = false
         entity.addChild(highlight)
 
         return RoomPlanObjectEntityRecord(entity: entity, highlight: highlight)
+    }
+
+    private static func wallDecorAlignment(
+        object: EditableRoomPlanObject,
+        parentWall: RoomPlanSurfaceModel?,
+        roomCenter: SIMD3<Float>?
+    ) -> (position: SIMD3<Float>, orientation: simd_quatf) {
+        guard
+            object.semantic.isWallMountedDecor,
+            let parentWall,
+            let roomCenter
+        else {
+            return (.zero, simd_quatf(angle: 0, axis: SIMD3<Float>(0, 1, 0)))
+        }
+
+        let wallTransform = parentWall.transform.matrix
+        let objectTransform = object.transform.matrix
+        let wallPosition = position(of: wallTransform)
+        let objectPosition = position(of: objectTransform)
+        let candidateNormal = normalizedNormal(of: wallTransform)
+        let inwardNormal = simd_dot(candidateNormal, roomCenter - wallPosition) >= 0
+            ? candidateNormal
+            : -candidateNormal
+        let desiredDistance = wallThickness / 2
+            + RoomPlanWallDecorGeometry.depth / 2
+            + RoomPlanWallDecorGeometry.wallSurfaceGap
+        let currentDistance = simd_dot(objectPosition - wallPosition, inwardNormal)
+        let worldCorrection = inwardNormal * (desiredDistance - currentDistance)
+        let localCorrection4 = objectTransform.inverse * SIMD4<Float>(
+            worldCorrection.x,
+            worldCorrection.y,
+            worldCorrection.z,
+            0
+        )
+        let objectRotation = Transform(matrix: objectTransform).rotation
+        let wallRotation = Transform(matrix: wallTransform).rotation
+        return (
+            SIMD3<Float>(localCorrection4.x, localCorrection4.y, localCorrection4.z),
+            objectRotation.inverse * wallRotation
+        )
     }
 
     static func update(_ record: RoomPlanObjectEntityRecord, from object: EditableRoomPlanObject) {

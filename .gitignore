@@ -5,7 +5,7 @@ storage/
 
 reconstruction/jobs/
 
-models/
+/models/
 *.ckpt
 *.ply
 *.tar.gz
